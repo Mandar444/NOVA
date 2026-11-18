@@ -261,7 +261,8 @@ export function usePaper(o: Options) {
     onPage(q.pageId, () => {
       circle(q, `Question ${q.number}`)
       o.openAsk()
-      void o.nova.ask('hint', `Help me with question ${q.number}. Don't tell me the answer.`, null, { exam: { number: q.number, text: q.text, answer: q.answer, reveal: false }, anchorRect: q.bounds })
+      const work = answerRegions(doc(o).pages[q.pageId], t, q)
+      void o.nova.ask('hint', `Help me with question ${q.number}. Don't tell me the answer.`, null, { exam: { number: q.number, text: q.text, answer: q.answer, reveal: false }, anchorRect: q.bounds, workRegionId: work[work.length - 1]?.id })
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [o.currentPageId, o.nova])

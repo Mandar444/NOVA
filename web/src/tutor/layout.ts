@@ -44,12 +44,16 @@ export function placeBatch(page: Page, actions: TutorAction[], anchorBounds: (id
       continue
     }
     const { w, h } = estimateSize(a)
+    // the student writes their next lines below and beside their work: cards go to the right of everything the
+    // student has written at this height (the page is endless and grows to the right), never underneath it
+    const band = page.strokes.map(strokeBounds).filter((b) => b.y + b.h > anchor.y - 60 && b.y < anchor.y + Math.max(anchor.h, h) + 260)
+    const clearX = Math.max(anchor.x + anchor.w, ...band.map((b) => b.x + b.w)) + 40
     const candidates: Rect[] = []
-    for (let dy = 0; dy <= 240; dy += 24) candidates.push({ x: anchor.x + anchor.w + 32, y: anchor.y - 8 + dy, w, h })
-    for (let dy = 16; dy <= 480; dy += 24) candidates.push({ x: anchor.x, y: anchor.y + anchor.h + dy, w, h })
-    for (let dy = -120; dy <= 480; dy += 24) for (let x = anchor.x + anchor.w + 32; x + w <= page.width; x += 48) candidates.push({ x, y: anchor.y + dy, w, h })
-    let spot = candidates.find(fits)
+    for (let x = clearX; x <= clearX + 960; x += 48) for (let dy = -8; dy <= 240; dy += 24) candidates.push({ x, y: Math.max(8, anchor.y + dy), w, h })
+    const fitsRight = (r: Rect) => r.y >= 8 && !obstacles.some((o) => intersects(o, r))
+    let spot = candidates.find(fitsRight)
     let leader = false
+    if (spot && Math.abs(spot.y - anchor.y) > 160) leader = true
     if (!spot) {
       // gutter: scan the free page area top-to-bottom, nearest to the anchor first
       const all: Rect[] = []

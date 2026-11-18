@@ -24,6 +24,7 @@ interface Props {
   onClearAbout: () => void
   onSend: (intent: Intent, question: string, opts?: { voice?: boolean }) => void
   onClose: () => void
+  offsetRight?: number // keep clear of a panel on the right (the test panel)
 }
 
 const QUICK_LINE: { label: string; intent: Intent; q: string }[] = [
@@ -36,7 +37,7 @@ const QUICK_LINE: { label: string; intent: Intent; q: string }[] = [
 ]
 const QUICK_PAGE: string[] = ['Add a trigonometry table', 'Write the algebraic identities', 'Explain what I did on this page', 'Give me a similar question to practise']
 
-export function AskPanel({ docked, startWithMic, turns, status, about, onClearAbout, onSend, onClose }: Props) {
+export function AskPanel({ docked, startWithMic, turns, status, about, onClearAbout, onSend, onClose, offsetRight }: Props) {
   const [text, setText] = useState('')
   const [mic, setMic] = useState<'idle' | 'recording' | 'transcribing'>('idle')
   const [elapsed, setElapsed] = useState(0)
@@ -165,7 +166,7 @@ export function AskPanel({ docked, startWithMic, turns, status, about, onClearAb
   statusNow.current = status.state
   const shown = turns.slice(-24)
   return (
-    <aside className={docked ? 'ask-panel' : 'ask-panel sheet-mode'} onPointerDown={(e) => e.stopPropagation()} role="dialog" aria-label="Ask NOVA">
+    <aside className={docked ? 'ask-panel' : 'ask-panel sheet-mode'} style={docked && offsetRight ? { right: offsetRight } : undefined} onPointerDown={(e) => e.stopPropagation()} role="dialog" aria-label="Ask NOVA">
       <header className="ask-head">
         <span className="nova-mark" aria-hidden="true" />
         <span className="ask-title"><img className="ask-mark" src="/nova-icon.png" alt="" />Ask NOVA</span>

@@ -9,6 +9,7 @@ import { TutorLayer } from '../tutor/Annotations'
 import { useNova, type Intent } from '../tutor/useNova'
 import { AskPanel } from '../ui/AskPopover'
 import { TestPanel } from '../ui/TestPanel'
+import { activeTestFor, answerRegions } from '../tutor/usePaper'
 import { HandwritingSetup } from '../ui/HandwritingSetup'
 import type { StartAction } from '../ui/Home'
 import { Shelf } from '../ui/Shelf'
@@ -264,7 +265,26 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
   /** From the Ask panel: the conversation continues; it is about askAbout (or the whole page). */
   const askFromPanel = (intent: Intent, question: string, o?: { voice?: boolean }) => {
     // asked by voice → NOVA answers out loud too (typed questions stay silent unless "always speak" is on)
-    void nova.ask(intent, question, askAbout && page.regions.some((r) => r.id === askAbout) ? askAbout : null, o?.voice ? { speak: true } : undefined)
+    const about = askAbout && page.regions.some((r) => r.id === askAbout) ? askAbout : null
+    const exam = about ? undefined : paperQuestionInFocus()
+    void nova.ask(intent, question, about, { ...(o?.voice ? { speak: true } : {}), ...(exam ?? {}) })
+  }
+
+  /** On a question-paper page: the printed question under which the student last wrote, else the first one in view. */
+  const paperQuestionInFocus = () => {
+    const t = activeTestFor(state, pageId)
+    const qs = (t?.questions ?? []).filter((q) => q.pageId === pageId)
+    if (!t || !qs.length) return undefined
+    const latest = [...page.regions].sort((a, b) => b.createdAt - a.createdAt)[0]
+    let q = latest ? qs.find((x) => answerRegions(page, t, x).some((r) => r.id === latest.id)) : undefined
+    const top = -view.ty / view.scale
+    q ??= qs.filter((x) => x.bounds.y + x.bounds.h >= top).sort((a, b) => a.bounds.y - b.bounds.y)[0] ?? qs[0]
+    const work = answerRegions(page, t, q)
+    return {
+      exam: { number: q.number, text: q.text, answer: q.answer, reveal: t.status === 'finished' },
+      anchorRect: q.bounds,
+      workRegionId: work[work.length - 1]?.id,
+    }
   }
 
   const regionAction = (a: RegionMenuAction) => {
@@ -749,6 +769,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
           onClearAbout={() => setAskAbout(null)}
           onSend={askFromPanel}
           onClose={() => setAsk(null)}
+          offsetRight={!phone && testOpen && activeTest && !focus ? 376 : undefined}
         />
       )}
       {sheet && <ObjectSheet obj={sheet} onClose={() => setSheet(null)} />}

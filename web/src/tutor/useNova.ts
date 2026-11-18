@@ -202,6 +202,9 @@ export function useNova(o: Options) {
       const value = res.answer.includes('=') ? res.answer.split('=').pop()!.trim() : res.answer
       res = { ...res, kind: 'answer', answer: value }
     }
+    // An equation the student has written is theirs to solve: NOVA marks and offers Solve, but does not write the
+    // solution unasked. Lines that ask ("x = ?", "4 + 2 =", "find …") and the Solve button (force) are answered.
+    if (!force && res.kind === 'solution' && /=/.test(text) && !/=\s*$/.test(text) && !isQuestion(text)) return false
     if (res.kind === 'solution' && res.steps?.length) {
       // the whole worked solution, one step per line, under the student's line in their style
       const style = styleFromRegion(now, cur)
@@ -352,7 +355,7 @@ export function useNova(o: Options) {
   }
 
   const ask = useCallback(
-    async (intent: Intent, question: string, selectedRegionId: string | null, extra?: { exam?: NonNullable<TutorPayload['exam']>; anchorRect?: Rect; speak?: boolean }) => {
+    async (intent: Intent, question: string, selectedRegionId: string | null, extra?: { exam?: NonNullable<TutorPayload['exam']>; anchorRect?: Rect; speak?: boolean; workRegionId?: string }) => {
       const gen = ++tutorGen.current
       tutorAbort.current?.abort()
       stopSpeaking()
@@ -376,7 +379,8 @@ export function useNova(o: Options) {
       let problemId: string | undefined
       let currentId: string | undefined
       if (extra?.exam) {
-        // exam help is about the printed question, not a written line
+        // a printed question: the student's latest working under it (if any) is the current step
+        if (extra.workRegionId && p1.regions.some((r) => r.id === extra.workRegionId)) currentId = extra.workRegionId
       } else if (intent === 'ask' && !sel) {
         // a typed/spoken question with nothing selected: ground it in the page's problem and the latest working, if any
         // (the tutor answers off-topic questions directly and ignores this context)
@@ -510,7 +514,9 @@ export function useNova(o: Options) {
     // the explanation rides on the main visual (graph / equation) as its caption; otherwise it becomes a note
     const visual = actions.find((a) => a.type === 'write_equation' || a.type === 'plot_function')
     const pageLevel = ctx.regionId === 'page'
-    if (res.explanation && !hasNote && !visual && !pageLevel && !actions.some((a) => a.type === 'write_lines' || a.type === 'write_table')) actions.unshift({ id: `${ctx.requestId}:x`, type: 'add_note', anchorRegionId: ctx.regionId, text: res.explanation })
+    // the page gets the focused point; the next step and the longer explanation live in the chat
+    const noteText = res.note || res.explanation
+    if (noteText && !hasNote && !visual && !pageLevel && !actions.some((a) => a.type === 'write_lines' || a.type === 'write_table')) actions.unshift({ id: `${ctx.requestId}:x`, type: 'add_note', anchorRegionId: ctx.regionId, text: noteText })
     const existing = new Set(p.tutorObjects.map((t) => t.id))
     const fresh = actions.filter((a, i) => !existing.has(a.id) && actions.findIndex((b) => b.id === a.id) === i)
     const regionById = new Map(p.regions.map((r) => [r.id, r]))
@@ -531,8 +537,13 @@ export function useNova(o: Options) {
     const lastRegion = [...p.regions].sort((a, b) => b.createdAt - a.createdAt)[0]
     const baseStyle = lastRegion ? styleFromRegion(p, lastRegion) : { height: 40, slant: 0.08, width: 3.2, seed: 5 }
     const contentStyle = { ...baseStyle, height: Math.max(24, Math.min(36, baseStyle.height * 0.58)), width: Math.max(2.2, baseStyle.width * 0.8) }
-    const pending = { ...p, tutorObjects: [...p.tutorObjects] }
-    const replaced: string[] = []
+    // one live reply: the cards of NOVA's earlier replies give way to this one (the chat keeps them all);
+    // handwriting NOVA wrote (answers, marks, solutions, tables) stays
+    const CARD = new Set(['add_note', 'speak', 'draw_groups', 'highlight_region', 'write_equation'])
+    const replyCards = (t: TutorObject) => t.status === 'active' && CARD.has(t.action.type) && !(t.action.type === 'write_equation' && t.action.purpose === 'completion') && !t.id.startsWith('auto:') && !t.id.startsWith('mark:')
+    const retiring = fresh.some((a) => CARD.has(a.type)) ? p.tutorObjects.filter(replyCards).map((t) => t.id) : []
+    const pending = { ...p, tutorObjects: p.tutorObjects.filter((t) => !retiring.includes(t.id)) }
+    const replaced: string[] = [...retiring]
     for (let k = 0; k < fresh.length; k++) {
       const a = fresh[k]
       if (a.type !== 'write_lines' && a.type !== 'write_table') continue
@@ -572,7 +583,7 @@ export function useNova(o: Options) {
         author: 'tutor',
         status: 'active',
         action: { ...a, anchorRegionId: anchorId } as TutorAction,
-        caption: a === visual && !hasNote && a.type !== 'plot_function' ? res.explanation.slice(0, 400) : undefined,
+        caption: a === visual && !hasNote && a.type !== 'plot_function' ? noteText : undefined,
         layout: layout.get(a.id) ?? { x: 40, y: 40, w: 300, h: 80, leader: false },
       }
     })

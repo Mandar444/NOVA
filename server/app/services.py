@@ -282,6 +282,7 @@ _FULL = re.compile(
     re.IGNORECASE,
 )
 _DETAIL: contextvars.ContextVar[str | None] = contextvars.ContextVar("tutor_detail", default=None)
+_NOTE: contextvars.ContextVar[str | None] = contextvars.ContextVar("tutor_note", default=None)
 
 
 def wants_full_solution(req: TutorRequest) -> bool:
@@ -455,6 +456,7 @@ async def _ask_model(req: TutorRequest, known: set[str], check: CheckResponse | 
     say, nxt = clean_text(obj.get("say"), 260), clean_text(obj.get("next"), 200)
     explanation = " ".join(x for x in (say, nxt) if x) or clean_text(obj.get("explanation"), 400)
     _DETAIL.set(clean_text(obj.get("detail"), 900) or None)
+    _NOTE.set(say if say and nxt else None)  # the page shows the focused point; the chat also has the next step
     if not explanation:
         raise ApiError("INVALID_MODEL_OUTPUT", "The tutor reply was empty. Retry.", rid)
     return explanation, obj.get("actions") or [], settings.model
@@ -486,7 +488,7 @@ async def tutor(req: TutorRequest) -> TutorResponse:
         elif detail and not wants_full_solution(req) and req.intent != "complete":
             detail = _redact_answer(detail, _unique_solution(req.problem.text if req.problem else None))
         return TutorResponse(
-            context=ctx, explanation=explanation, detail=detail, actions=actions, check=check, verifiedBy=verified, model=model,
+            context=ctx, explanation=explanation, detail=detail, note=_redact_answer(_NOTE.get() or "", None) or None if _NOTE.get() and explanation.startswith(_NOTE.get() or "") else None, actions=actions, check=check, verifiedBy=verified, model=model,
             latencyMs=int((time.perf_counter() - started) * 1000),
         )
 

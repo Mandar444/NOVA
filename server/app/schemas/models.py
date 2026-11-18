@@ -229,6 +229,7 @@ class TutorResponse(BaseModel):
     context: RequestContext
     explanation: str  # short and focused: shown on the page and in the chat
     detail: str | None = None  # a longer explanation, shown only when the student opens it
+    note: str | None = None  # the focused point alone, for the note on the page (explanation adds the next step)
     actions: list[Action]
     check: CheckResponse | None = None
     verifiedBy: Literal["deterministic", "model", "none"] = "none"

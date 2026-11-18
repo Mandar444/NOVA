@@ -2,6 +2,50 @@
 
 _Last updated: 2026-11-18_
 
+## QA checkpoint — PAUSED (2026-11-18)
+Paused by the low-memory safeguard (≈1 GB free of 16 GB). Nothing below is deployed; origin/main is still afa2e60.
+
+**Test copy:** git worktree `%TEMP%\claude\…\scratchpad\q` (full path in the session notes), branch **`qa-journeys`**,
+base **afa2e60** (= origin/main). Checkpoint = the commit on `qa-journeys` that adds this section (local only, not pushed).
+The user's main checkout (`Desktop/Nova`, 12 uncommitted files from the 5 Nov PDF experiment) is untouched.
+
+**Unfinished fixes in the checkpoint (unit/type checks pass: tsc clean, server 198, web 19; behaviour only partly re-verified):**
+| File | Change |
+|---|---|
+| `server/app/services.py`, `schemas/models.py`, `web/src/tutor/api.ts` | `note` = the focused point only, for the card on the page; chat keeps say + next |
+| `web/src/tutor/useNova.ts` | equation lines the student writes are not solved unasked (marks + Solve tap; "x = ?", "4 + 2 =", Solve button still answer); exam Ask uses the student's latest work under the question; one live reply card (earlier reply cards retire, chat keeps history) |
+| `web/src/tutor/layout.ts` | cards go right of the student's writing in that band (page grows), never in the writing lane below; leader line if moved >160 px |
+| `web/src/tutor/usePaper.ts` | Help sends the student's latest answer line under the question |
+| `web/src/notebook/NotebookScreen.tsx` | Ask on a paper page is grounded in the printed question in focus (latest-work question, else first visible) |
+| `web/src/ui/AskPopover.tsx` | docked Ask panel sits left of the open test panel (did cover the Help buttons) |
+
+**Known open defect:** premature next-step giveaway in prose — A2 reply said "On your line, write 2x + 6 = 14" (server filter `_is_students_step` checks actions only, not the explanation text).
+**Product note:** voice questions — keep transcript review + Send as the default (verify current behaviour before changing anything).
+
+**Tests (real glm-5.3-flash through the local build unless marked):**
+| Gate | Case | Result |
+|---|---|---|
+| B auto handwriting | literal wrong maths `4 + 2 = 7`, no clicks | PASS (readback 6.0 s, ✗ mark, 1 recognize call) |
+| | no reread of unchanged line | PASS |
+| | edit reread / erase reread | PASS (4.2 s / 4.1 s) |
+| | stale reading rejected (response held 8 s by test = emulated delay, real model) | PASS |
+| | stroke during request 319 ms vs 291 ms idle | **NOT an input-latency measurement**: that is the wall time of the scripted 40-point mouse gesture; input-to-paint not yet measured |
+| | stale tutor reply after page change; newer question supersedes older | NOT RUN |
+| A teaching (before fixes) | F1 Ask on paper "no problem"; F2 Ask panel over Help; F3 unprompted solution; F4 cards over student lines (50–72 %); F5 cards pile up; F6 switched question → invented problem | FAILED → fixed in checkpoint |
+| A teaching (after fixes, partial) | A1 Ask on paper (grounded, Q1 hint) · Help on Q3 · A4 still confused (changed approach, picture) | PASS (2.5 / 3.0 / 2.3 s) |
+| | A2 wrong step | grounded, correct diagnosis, but **gives the next step** → FAIL (open defect) |
+| | A5 explain why · A3 correct step · A6 full solution | **UNVERIFIED** — provider "model is busy" / ConnectError; waits of 774 s and 1952 s exceed the 118 s client deadline → must be investigated (machine stall under memory pressure vs deadline bug) |
+| | A7 ambiguous handwriting · A8 switch question | NOT RUN |
+| C 4-page PDF (`real4.pdf`, CBSE 2018 SQP p1–4) | visible / writable timings, write while preparing, ink/zoom/page kept, failure, cancel, reload | NOT RUN on this build (earlier synthetic-paper numbers in RESULTS.md) |
+| D full session | create → import → write → ask → revise → close → reopen; provider failure / cancel during long wait | NOT RUN |
+
+**Processes:** test servers (vite preview :5190 from `q/web/dist`, backend :8011 from `q/server`) were stopped at this checkpoint to free memory.
+Restart: `cd q/server && ../../../Desktop/Nova/server/.venv/Scripts/python -m uvicorn app.main:app --host 127.0.0.1 --port 8011` and
+`cd q/web && npm run build && NOVA_BACKEND=http://127.0.0.1:8011 npx vite preview --host 127.0.0.1 --port 5190 --strictPort` (preview proxies /api to NOVA_BACKEND).
+
+**Exact next test (one browser, sequential):** fix the prose giveaway, then `SKIP_PAPER=1 node qa/a_teach.cjs after2` (handwritten part:
+A2, A4, A5, A3, A6, A8), then A7 ambiguous handwriting. A provider error marks that case UNVERIFIED; do not retry more than once.
+
 ## Running
 | Process | URL | Command |
 |---|---|---|
