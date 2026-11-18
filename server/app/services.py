@@ -344,6 +344,29 @@ def _is_students_step(req: TutorRequest, line: str, hide: bool) -> bool:
         return False
 
 
+_TOK = r"(?:\d+(?:\.\d+)?|(?<![A-Za-z])[a-z](?![A-Za-z])|[()+\-−*/^²³×·])"
+_EQ_IN_TEXT = re.compile(rf"{_TOK}(?:[ ]*{_TOK})*[ ]*=[ ]*{_TOK}(?:[ ]*{_TOK})*")
+_SENTENCE = re.compile(r"[^.!?]*(?:[.!?](?!\d)|$)")
+
+
+def _hide_steps_in_text(req: TutorRequest, text: str | None, hide: bool) -> str | None:
+    """Prose that hands the student their own next line ("write 2x + 6 = 14") loses that sentence.
+    Lines already on the page (the student's own work) can still be quoted."""
+    if not text or not hide:
+        return text
+    written = {_shape_eq(x.text) for x in ([req.problem] if req.problem else []) + ([req.current] if req.current else []) + list(req.pageLines or []) if x and x.text}
+    def leaks(sentence: str) -> bool:
+        for m in _EQ_IN_TEXT.finditer(sentence):
+            eq = m.group(0).strip(" +-−*/^×·").replace("−", "-")
+            if re.fullmatch(r"[a-z]\s*=\s*-?[\d./]+", eq):
+                continue  # a final answer is redacted to "x = ?" elsewhere, keeping the sentence
+            if "=" in eq and _shape_eq(eq) not in written and _is_students_step(req, eq, True):
+                return True
+        return False
+    kept = [s for s in (m.group(0) for m in _SENTENCE.finditer(text)) if s.strip() and not leaks(s)]
+    return " ".join(s.strip() for s in kept)
+
+
 def _validate_actions(raw_actions: Any, req: TutorRequest, known: set[str], answer: str | None, value: str | None = None) -> list[Any]:
     out: list[Any] = []
     if not isinstance(raw_actions, list):
@@ -453,9 +476,16 @@ async def _ask_model(req: TutorRequest, known: set[str], check: CheckResponse | 
         obj = parse_json_object(reply.text)
     except ValueError:
         raise ApiError("INVALID_MODEL_OUTPUT", "The tutor reply could not be read. Retry.", rid)
+    hide = req.intent != "complete"
     say, nxt = clean_text(obj.get("say"), 260), clean_text(obj.get("next"), 200)
-    explanation = " ".join(x for x in (say, nxt) if x) or clean_text(obj.get("explanation"), 400)
-    _DETAIL.set(clean_text(obj.get("detail"), 900) or None)
+    had = bool(say or nxt)
+    say, nxt = _hide_steps_in_text(req, say, hide), _hide_steps_in_text(req, nxt, hide)
+    if had and not (say or nxt):
+        nxt = "Try writing that next line yourself, then I'll check it."
+    elif had and say and not nxt:
+        nxt = "Try that on your next line."
+    explanation = " ".join(x for x in (say, nxt) if x) or _hide_steps_in_text(req, clean_text(obj.get("explanation"), 400), hide)
+    _DETAIL.set(_hide_steps_in_text(req, clean_text(obj.get("detail"), 900), hide) or None)
     _NOTE.set(say if say and nxt else None)  # the page shows the focused point; the chat also has the next step
     if not explanation:
         raise ApiError("INVALID_MODEL_OUTPUT", "The tutor reply was empty. Retry.", rid)

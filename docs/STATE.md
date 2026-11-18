@@ -19,8 +19,9 @@ The user's main checkout (`Desktop/Nova`, 12 uncommitted files from the 5 Nov PD
 | `web/src/notebook/NotebookScreen.tsx` | Ask on a paper page is grounded in the printed question in focus (latest-work question, else first visible) |
 | `web/src/ui/AskPopover.tsx` | docked Ask panel sits left of the open test panel (did cover the Help buttons) |
 
-**Known open defect:** premature next-step giveaway in prose — A2 reply said "On your line, write 2x + 6 = 14" (server filter `_is_students_step` checks actions only, not the explanation text).
-**Product note:** voice questions — keep transcript review + Send as the default (verify current behaviour before changing anything).
+**Fixed after checkpoint (unit-tested, not yet re-run with the model):** prose giveaway — A2 reply said "On your line, write 2x + 6 = 14"; `_hide_steps_in_text` now drops a sentence of say/next/detail that contains the student's next correct form of the problem (lines already on the page and the final answer, which is redacted to "x = ?", are not affected; full-solution requests untouched). tests/test_teaching.py +2.
+**Voice:** transcript review + Send restored as the default on the browser-speech path (it had sent on pause since d23b622); the reply is still spoken.
+**Deadline note:** each request is capped at 118 s, but an Ask that first has to read a line makes two requests (read, then tutor), so up to ~236 s; Stop returns the panel to idle at once in either stage. The 774 s / 1952 s waits in the partial run also overran the harness's own 130 s wait, so the test machine itself stalled (memory pressure); to be verified with a slow fake provider in gate D.
 
 **Tests (real glm-5.3-flash through the local build unless marked):**
 | Gate | Case | Result |

@@ -47,7 +47,6 @@ export function AskPanel({ docked, startWithMic, turns, status, about, onClearAb
   const live = useRef<BrowserListen | null>(null)
   const liveStart = useRef(0)
   const textNow = useRef('')
-  const statusNow = useRef('')
   const gone = useRef(false) // panel closed (or remounted) while waiting to start the mic
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const threadRef = useRef<HTMLDivElement>(null)
@@ -123,17 +122,10 @@ export function AskPanel({ docked, startWithMic, turns, status, about, onClearAb
         setMic('idle')
         if (err && !heard) return setMicError(err)
         if (!heard) return setMicError('No speech was heard. Try again or type.')
-        // a spoken question is sent straight away and answered out loud
-        const q = `${textNow.current} ${heard}`.trim()
-        if (statusNow.current === 'working') {
-          setText(q)
-          setSpoken(true)
-          inputRef.current?.focus()
-          return
-        }
-        onSend('ask', q, { voice: true })
-        setText('')
-        setSpoken(false)
+        // the transcript goes into the box for the student to check (and edit) before Send; the reply is spoken
+        setText(`${textNow.current} ${heard}`.trim())
+        setSpoken(true)
+        inputRef.current?.focus()
       })
       return
     }
@@ -163,7 +155,6 @@ export function AskPanel({ docked, startWithMic, turns, status, about, onClearAb
 
   const busy = status.state === 'working'
   textNow.current = text
-  statusNow.current = status.state
   const shown = turns.slice(-24)
   return (
     <aside className={docked ? 'ask-panel' : 'ask-panel sheet-mode'} style={docked && offsetRight ? { right: offsetRight } : undefined} onPointerDown={(e) => e.stopPropagation()} role="dialog" aria-label="Ask NOVA">

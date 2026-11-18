@@ -51,6 +51,28 @@ def test_students_next_step_is_not_written_for_them(monkeypatch):
     assert lines == ["2 multiplies each term"]
 
 
+def test_next_step_in_prose_is_not_given_away(monkeypatch):
+    # A2 (real model, 2026-11-18): "... On your line, write 2x + 6 = 14."
+    fake = Fake('{"say":"The 2 must multiply BOTH terms in the bracket, so 2 × 3 is missing.","next":"On your line, write 2x + 6 = 14.",'
+                '"detail":"2(x + 3) means 2x + 2 × 3. So it becomes 2x + 6 = 14. Then subtract 6.","actions":[]}')
+    monkeypatch.setattr(services, "provider", fake)
+    j = client.post("/api/v1/tutor", json=body("Where did I go wrong?", current="2x + 3 = 14")).json()
+    assert "2x + 6 = 14" not in j["explanation"] and "2x + 6 = 14" not in (j["detail"] or "")
+    assert j["explanation"].startswith("The 2 must multiply BOTH terms") and "next line" in j["explanation"]
+    assert "Then subtract 6." in j["detail"]
+
+
+def test_students_own_lines_and_wrong_lines_can_be_quoted(monkeypatch):
+    fake = Fake('{"say":"Your line 2x + 6 = 14 is right.","next":"What do you do to both sides to get 2x alone?","actions":[]}')
+    monkeypatch.setattr(services, "provider", fake)
+    j = client.post("/api/v1/tutor", json=body("What next?", current="2x + 6 = 14")).json()
+    assert j["explanation"] == "Your line 2x + 6 = 14 is right. What do you do to both sides to get 2x alone?"
+    fake = Fake('{"say":"In 2x + 3 = 14 the 3 should be 2 × 3.","next":"Fix that term.","actions":[]}')
+    monkeypatch.setattr(services, "provider", fake)
+    j = client.post("/api/v1/tutor", json=body("Where did I go wrong?", current="2x + 3 = 14")).json()
+    assert "2x + 3 = 14" in j["explanation"]
+
+
 def test_full_solution_when_explicitly_asked(monkeypatch):
     fake = Fake('{"say":"Here it is.","next":"","actions":[{"type":"write_lines","anchorRegionId":"page","title":"t","lines":["2x + 6 = 14","2x = 8","x = 4"]}]}')
     monkeypatch.setattr(services, "provider", fake)
