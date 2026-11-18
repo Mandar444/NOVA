@@ -34,6 +34,23 @@ scripted readings, paper questions and tutor replies; real app build and real ba
 | late reply after an edit | PASS: "Your page changed, so NOVA stopped that answer"; late reply never applied; ink kept |
 | late reply after switching page | PASS: no reply on either page; first page's 10 strokes kept |
 | duplicates (3 questions in a row) | PASS: one live reply card on the page, 3 replies in the chat, nothing over the student's lines |
+**Real teaching, glm-5.3-flash, new build** (backend :8011 restarted on qa-batch2 code; an earlier run that day hit the OLD backend and is discarded)
+| Case | Reply (short) | Verdict |
+|---|---|---|
+| A2 wrong step 2x + 3 = 14 | "the 2 multiplies BOTH terms… it multiplies the 3 too"; ✗ mark + highlight | correct, relevant, no step given away |
+| A4 still confused | changes approach: try x = 4, groups picture | adapts, good |
+| A5 explain why | "2(x + 3) means 2 whole copies of (x + 3)" + full why in detail | clear explanation, final value not stated |
+| A3 correct step 2x + 6 = 14 | confirms, "subtract 6 from both sides" | correct; says the next move twice (say + next) |
+| A6 full solution asked | 6 ordered lines with reasons, x = 4 | correct and complete |
+| A8 switch to 5x − 7 = 18 | reading was ambiguous → "Pick what you wrote" | UNVERIFIED (switch not reached; the reading-confirm step worked) |
+| A7 ambiguous digit (1 or 7) | read confidently as "2x = 7", no confirmation asked | recognition did not flag the ambiguity |
+Paper (run on the OLD backend, re-run pending): Ask on Q1 and Help on Q3 correct and relevant; Help on another question switched correctly (102 s, provider slow);
+a wrong line written right under Q3 was attributed to **Q4** (no answer space on the printed paper; a line is assigned by its vertical centre) → open.
+
+**Release gates still blocked:** paper teaching re-run on the new backend; A8 handwritten switch; Q-attribution on tight printed papers;
+Ask panel covering the paper when the test panel is open; mobile: delayed frames during page rendering not yet profiled by function,
+and no physical phone is connected (no adb device) — device test not run. Provider latency varies widely (5–102 s per reply).
+
 Test-layout lessons: lines must be under the printed question (Q1's area starts at its text); the fake paper's Q2 position is invented.
 
 ## QA checkpoint — PAUSED (2026-11-18, evening)

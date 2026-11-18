@@ -37,12 +37,14 @@ const PDF = path.join(__dirname, '..', 'real4.pdf')
       sentContext: { intent: req.intent, problem: req.problem, problemConfirmed: req.problemOk, current: req.current, currentConfirmed: req.currentOk, exam: req.exam, historyTurns: req.history },
       reply: reply?.text, detail: reply?.detail,
       newOnPage: (pg?.tutor || []).filter((x) => !tBefore.has(x)),
+      recognisedWorkOnPage: (pg?.regions || []).map((x) => x.reading?.text).filter(Boolean),
       covers: L.covering(pg || { regions: [] }),
     })
     console.error(`[${name}] ${secs}s :: ${reply?.text}`)
   }
 
   async function writeAndRead(text, x, y, seed) {
+    if (await page.locator('.ask-panel').count()) { await page.keyboard.press('Escape'); await page.waitForTimeout(300) } // the panel can cover the page
     await L.draw(page, text, x, y, 50, seed)
     const ok = await L.waitReadback(page, text.replace(/\s+/g, ''), 90000)
     await page.waitForTimeout(7000) // NOVA's own reaction (mark / answer) + autosave
@@ -80,16 +82,29 @@ const PDF = path.join(__dirname, '..', 'real4.pdf')
 
   // the student writes a wrong first step under the question, then asks
   if (q3?.bounds) {
-    const m = await page.evaluate(() => (document.querySelector('.page-transform').style.transform.match(/translate\(([-\d.]+)px, ([-\d.]+)px\) scale\(([\d.]+)\)/) || []).slice(1).map(Number))
+    const tf = () => page.evaluate(() => (document.querySelector('.page-transform').style.transform.match(/translate\(([-\d.]+)px, ([-\d.]+)px\) scale\(([\d.]+)\)/) || []).slice(1).map(Number))
+    if (await page.locator('.ask-panel').count()) await page.keyboard.press('Escape')
+    let m = await tf()
+    for (let k = 0; k < 6 && (q3.bounds.y + q3.bounds.h + 6) * m[2] + m[1] > 520; k++) { // bring the question into view
+      const b = await L.ws(page); await page.mouse.move(b.x + 500, b.y + 400); await page.mouse.wheel(0, Math.min(400, (q3.bounds.y + q3.bounds.h) * m[2] + m[1] - 300)); await page.waitForTimeout(400); m = await tf()
+    }
     const y = (q3.bounds.y + q3.bounds.h + 6) * m[2] + m[1]
     const x = (q3.bounds.x + 40) * m[2] + m[0]
     if (y > 60 && y < 820) {
       await writeAndRead('23 - 27 = 4', x, y, 31)
       await exchange('A2 imported question, wrong step', 'Where did I go wrong?')
+      // switch to another printed question with the Help button
+      const helpQ1 = async () => {
+        if (await page.locator('.ask-panel').count()) await page.keyboard.press('Escape')
+        const rows = page.locator('.q-row'); const n = await rows.count()
+        for (let k = 0; k < n; k++) { const row = rows.nth(k); if (!/eleventh/i.test(await row.innerText())) { await row.locator('button', { hasText: 'Help' }).click(); return } }
+      }
+      await exchange('A8 imported: switched to another printed question (Help)', '(Help button on another question)', { help: helpQ1 })
     } else ex.push({ case: 'A2 imported (skipped: question off screen)', y })
   }
 
   }
+  if (process.env.ONLY_PAPER) { const out = { label, paperInfo, exchanges: ex, errors: log.errors }; fs.writeFileSync(path.join(L.OUT, `a_teach_${label}.json`), JSON.stringify(out, null, 1)); console.log(JSON.stringify(out, null, 1)); await browser.close(); return }
   // ---------- part 2: handwritten problem and working (fresh notebook)
   await L.newNotebook(page)
   await L.assist(page, true)
