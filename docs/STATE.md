@@ -24,8 +24,16 @@ scripted readings, paper questions and tutor replies; real app build and real ba
 | Case | Result |
 |---|---|
 | session: create → import real4.pdf → write under Q1 → Ask → revise → Ask → close → reload → reopen | PASS: import 0.6 s, 2 questions found; Ask 1 sent exam Q1 + current "7/75 = 7/(3 * 5^2)"; Ask 2 sent Q1 + the revised line, history 2; after reload the saved notebook is identical (pages, sheets, strokes, readings, chat, 1 NOVA note, test state), no duplicate annotations, no page errors |
-| ink count in that run | **OPEN**: 5 strokes saved for two drawn lines (~13 pen strokes); readings came from the script, so they don't prove the ink. Under investigation (may be strokes merged by the app or drawn off the page) |
-| busy, unreachable, timeout (110 s), Stop, second question replaces pending, late reply after Stop / edit / page switch, duplicate cards | NOT RUN yet (memory under 1 GB) |
+| ink in that run | resolved, no ink lost: the script wrote while the Ask panel was open and 9 pen-downs landed on the panel (diagnosed by pointer targets). Re-run with the panel closed: 13 of 13 strokes saved and identical after reopen. Blank page and paper page, Assist on/off, after a reply card: every stroke saved |
+| **finding** | with the test panel open, the docked Ask panel sits at x 664–1064 of a 1440 px screen, over the middle of the paper: the student cannot write there while the chat is open. Not changed (UI branch is separate); needs a layout decision |
+| busy (503) | PASS: "The model is busy. Wait a few seconds and retry." in 0.2 s, Retry offered, ink kept |
+| unreachable (connection dropped) | PASS: error in 0.2 s, Retry, ink kept. Wording "Could not reach BharatCode: RemoteProtocolError." is technical |
+| timeout (provider silent 200 s) | PASS: "The model took too long to respond." at 110.1 s; Stop offered at 5/40/80 s; pointer move → frame p95 7 ms during the wait; late answer at 200 s never shown or applied; a stroke after the error started a new reading |
+| Stop | **FAILED first**: no Stop while the Ask panel was open (the status strip with Stop is hidden then). Fixed (cdd502d): Stop in the panel's thinking bubble. Re-run PASS: idle in 45 ms, writable, late reply (30 s) never shown |
+| second question while one is pending | PASS: only the second reply shown; the first's late reply never shown or applied (the first question also drops out of the chat) |
+| late reply after an edit | PASS: "Your page changed, so NOVA stopped that answer"; late reply never applied; ink kept |
+| late reply after switching page | PASS: no reply on either page; first page's 10 strokes kept |
+| duplicates (3 questions in a row) | PASS: one live reply card on the page, 3 replies in the chat, nothing over the student's lines |
 Test-layout lessons: lines must be under the printed question (Q1's area starts at its text); the fake paper's Q2 position is invented.
 
 ## QA checkpoint — PAUSED (2026-11-18, evening)
