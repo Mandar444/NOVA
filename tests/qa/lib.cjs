@@ -37,6 +37,7 @@ async function open(browser, { cpu = 1, viewport = { width: 1440, height: 900 },
     const flush = () => { try { const a = JSON.parse(d().dataset.mv || '[]'); a.push(...lat.splice(0)); d().dataset.mv = JSON.stringify(a) } catch {} }
     addEventListener('pointermove', (e) => { const t = e.timeStamp; requestAnimationFrame(() => setTimeout(() => lat.push([Math.round(t), Math.round(performance.now() - t)]), 0)) }, { capture: true, passive: true })
     addEventListener('pointerup', () => setTimeout(flush, 120), { capture: true, passive: true })
+    setInterval(flush, 1000)
   })
   page.on('pageerror', (e) => log.errors.push(String(e).slice(0, 300)))
   page.on('console', (m) => { if (m.type() === 'error') log.console.push(m.text().slice(0, 200)) })

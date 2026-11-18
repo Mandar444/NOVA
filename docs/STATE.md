@@ -2,6 +2,32 @@
 
 _Last updated: 2026-11-18_
 
+## QA batch 2 (2026-11-18, branch `qa-batch2` from `qa-journeys` @ 71c3dfd; local only, not deployed)
+`qa-journeys` stays at its checkpoint. Main folder untouched. Checks: server pytest **206 passed**, web vitest **20 passed**, tsc clean, build ok.
+
+**Product corrections (378c4b9)**
+- Worked solutions only on request: the Solve button or an explicit request in Ask. Writing "x = ?", "solve …", "find …"
+  or an equation by itself gets the mark and the Solve/Ask buttons, never the solution; the value of an unknown ("x =" under a
+  problem) is held back the same way. Plain arithmetic ("4 + 2 =") is still finished automatically (unchanged; flag if that
+  should also wait for Solve). README table updated.
+- Teaching policy by request (`teaching_mode` in services.py, also told to the model as TEACHING MODE):
+  hint (Hint button, "what next", "where did I go wrong") = one next thought; a sentence that hands over the next line or the
+  final answer is left out whole, never patched to "x = ?". explain ("why", "explain", "I don't understand"; typed questions
+  only, the Hint button stays a hint) = the idea and why, text not filtered; NOVA still doesn't write the student's next line
+  on the page. solution (explicit full-solution request, Solve/complete, finished-test review) = complete ordered steps, nothing
+  withheld, every equation line checked against the problem; if one breaks the solution and the engine can solve the
+  problem, the engine's exact ordered steps are written instead. An unrevealed test question is always hint.
+  The old mid-sentence `_redact_answer`/`_redact_value` substitutions are no longer used in tutor replies.
+
+**Simulated failure / control-flow tests** (`tests/qa/f_sim.cjs <case>`, SIMULATED provider `tests/qa/fake_provider.py`:
+scripted readings, paper questions and tutor replies; real app build and real backend code; headless Chrome)
+| Case | Result |
+|---|---|
+| session: create → import real4.pdf → write under Q1 → Ask → revise → Ask → close → reload → reopen | PASS: import 0.6 s, 2 questions found; Ask 1 sent exam Q1 + current "7/75 = 7/(3 * 5^2)"; Ask 2 sent Q1 + the revised line, history 2; after reload the saved notebook is identical (pages, sheets, strokes, readings, chat, 1 NOVA note, test state), no duplicate annotations, no page errors |
+| ink count in that run | **OPEN**: 5 strokes saved for two drawn lines (~13 pen strokes); readings came from the script, so they don't prove the ink. Under investigation (may be strokes merged by the app or drawn off the page) |
+| busy, unreachable, timeout (110 s), Stop, second question replaces pending, late reply after Stop / edit / page switch, duplicate cards | NOT RUN yet (memory under 1 GB) |
+Test-layout lessons: lines must be under the printed question (Q1's area starts at its text); the fake paper's Q2 position is invented.
+
 ## QA checkpoint — PAUSED (2026-11-18, evening)
 Paused twice by the low-memory safeguard (1–2 GB free of 16 GB). Nothing here is deployed; origin/main is still afa2e60.
 
