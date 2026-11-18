@@ -11,7 +11,10 @@ const PDF = path.join(__dirname, '..', 'real4.pdf')
   const ex = []
   const tutorReqs = () => log.requests.filter((r) => r.path === 'tutor')
 
+  let providerErrors = 0
+  const PROVIDER_ERR = /busy|could not reach|took too long|cut off|could not be read|try again|retry/i
   async function exchange(name, question, opts = {}) {
+    if (providerErrors >= 2) { ex.push({ case: name, verdict: 'UNVERIFIED (not run: provider failing, stopped to avoid hammering it)' }); console.error(`[${name}] skipped`); return }
     const n = await L.tutorCount(page)
     const k = tutorReqs().length
     const docBefore = (await L.savedDocs(page))[0]
@@ -22,12 +25,15 @@ const PDF = path.join(__dirname, '..', 'real4.pdf')
     else await L.ask(page, question)
     const reply = await L.lastTutor(page, n, 130000)
     const secs = (Date.now() - t) / 1000
+    const errBubble = await page.evaluate(() => { const e = [...document.querySelectorAll('.bubble.error, .bubble.notice')].pop(); return e ? e.textContent.trim().slice(0, 160) : null })
+    const provErr = !reply || PROVIDER_ERR.test(reply.text || '') || (errBubble && PROVIDER_ERR.test(errBubble))
+    providerErrors = provErr ? providerErrors + 1 : 0
     await page.waitForTimeout(2500) // annotations placed + autosave
     const doc = (await L.savedDocs(page))[0]
     const pg = doc.pages.find((p) => p.id === pid)
     const req = tutorReqs()[k] || {}
     ex.push({
-      case: name, asked: question, seconds: secs,
+      case: name, asked: question, seconds: secs, verdict: provErr ? 'UNVERIFIED (provider error: ' + (errBubble || reply?.text || 'no reply') + ')' : 'observed',
       sentContext: { intent: req.intent, problem: req.problem, problemConfirmed: req.problemOk, current: req.current, currentConfirmed: req.currentOk, exam: req.exam, historyTurns: req.history },
       reply: reply?.text, detail: reply?.detail,
       newOnPage: (pg?.tutor || []).filter((x) => !tBefore.has(x)),
@@ -99,6 +105,20 @@ const PDF = path.join(__dirname, '..', 'real4.pdf')
   await exchange('A6 explicit full solution', 'Show me the full worked solution.')
   await writeAndRead('5x - 7 = 18', 120, 760, 9)
   await exchange('A8 switched to another question', 'How do I start this one?')
+  // A7 ambiguous handwriting: "2x = " then a digit drawn halfway between 1 and 7, on a fresh line
+  if (providerErrors < 2) {
+    await L.shot(page, `a_teach_${label}_hand`)
+    await L.newNotebook(page); await L.assist(page, true)
+    const b = await L.ws(page)
+    const end = await (await import('file:///C:/Users/smand/OneDrive/Desktop/Nova/tests/e2e/glyphs.mjs')).drawText(page, '2x = ', b.x + 120, b.y + 100, 50, 21)
+    await page.mouse.move(end + 2, b.y + 106); await page.mouse.down()
+    for (const [dx, dy] of [[8, -3], [16, -5], [22, -4], [20, 10], [17, 25], [14, 40], [12, 52]]) await page.mouse.move(end + 2 + dx, b.y + 106 + dy, { steps: 2 })
+    await page.mouse.up()
+    await page.waitForTimeout(9000)
+    const rb = await L.readbacks(page)
+    ex.push({ case: 'A7 ambiguous digit (1 or 7) — readback', readbacks: rb.slice(-3) })
+    await exchange('A7 ambiguous handwriting', 'Is this right?')
+  }
   await L.shot(page, `a_teach_${label}`)
 
   const out = { label, paperInfo, autoReactions: { afterProblem: afterProblem.tutor, afterWrongStep: afterStep.tutor }, exchanges: ex, errors: log.errors }

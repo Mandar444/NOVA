@@ -25,10 +25,18 @@ async function open(browser, { cpu = 1, viewport = { width: 1440, height: 900 },
       return m
     }
     const d = () => document.documentElement
-    d().dataset && 0
     new PerformanceObserver((l) => {
       try { const a = JSON.parse(d().dataset.lt || '[]'); for (const e of l.getEntries()) a.push([Math.round(e.startTime), Math.round(e.duration)]); d().dataset.lt = JSON.stringify(a) } catch {}
     }).observe({ type: 'longtask', buffered: true })
+    try {
+      new PerformanceObserver((l) => {
+        try { const a = JSON.parse(d().dataset.ev || '[]'); for (const e of l.getEntries()) if (/^pointer|^mouse/.test(e.name)) a.push([Math.round(e.startTime), e.name, Math.round(e.duration), Math.round(e.processingStart - e.startTime)]); d().dataset.ev = JSON.stringify(a) } catch {}
+      }).observe({ type: 'event', durationThreshold: 16, buffered: true })
+    } catch {}
+    const lat = []
+    const flush = () => { try { const a = JSON.parse(d().dataset.mv || '[]'); a.push(...lat.splice(0)); d().dataset.mv = JSON.stringify(a) } catch {} }
+    addEventListener('pointermove', (e) => { const t = e.timeStamp; requestAnimationFrame(() => setTimeout(() => lat.push([Math.round(t), Math.round(performance.now() - t)]), 0)) }, { capture: true, passive: true })
+    addEventListener('pointerup', () => setTimeout(flush, 120), { capture: true, passive: true })
   })
   page.on('pageerror', (e) => log.errors.push(String(e).slice(0, 300)))
   page.on('console', (m) => { if (m.type() === 'error') log.console.push(m.text().slice(0, 200)) })
@@ -188,3 +196,18 @@ function covering(pageDoc) {
   return hits
 }
 module.exports.covering = covering
+
+/** Input-to-paint for pointer events since `since` (performance.now): Chrome reports only events that took >= 16 ms
+ * from input to the next painted frame, so every unreported pointer event painted within one 16 ms frame. */
+async function inputLatency(page, since = 0) {
+  return page.evaluate((s) => {
+    const d = document.documentElement
+    const ev = JSON.parse(d.dataset.ev || '[]').filter(([t]) => t >= s)
+    const pen = ev.filter((e) => e[1] === 'pointerdown' || e[1] === 'pointerup').map((e) => e[2])
+    const mv = JSON.parse(d.dataset.mv || '[]').filter(([t]) => t >= s).map((x) => x[1]).sort((a, b) => a - b)
+    const q = (p) => (mv.length ? mv[Math.min(mv.length - 1, Math.floor(p * mv.length))] : null)
+    // move -> next rendered frame (rAF + task), every pointermove; pen down/up -> paint from Chrome Event Timing (>= 16 ms only)
+    return { moves: mv.length, moveToFrame_p50: q(0.5), moveToFrame_p95: q(0.95), moveToFrame_max: mv.length ? mv[mv.length - 1] : null, movesOver50ms: mv.filter((x) => x > 50).length, penDownUpToPaint_max: pen.length ? Math.max(...pen) : '<16' }
+  }, since)
+}
+module.exports.inputLatency = inputLatency

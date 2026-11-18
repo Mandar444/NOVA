@@ -198,8 +198,8 @@ export function AskPanel({ docked, startWithMic, turns, status, about, onClearAb
       </div>
       <div className="chips">
         {about
-          ? QUICK_LINE.map((q) => <button key={q.label} className="chip" disabled={busy} onClick={() => send(q.intent, q.q)}>{q.label}</button>)
-          : QUICK_PAGE.map((q) => <button key={q} className="chip" disabled={busy} onClick={() => send('ask', q)}>{q}</button>)}
+          ? QUICK_LINE.map((q) => <button key={q.label} className="chip" onClick={() => send(q.intent, q.q)}>{q.label}</button>)
+          : QUICK_PAGE.map((q) => <button key={q} className="chip" onClick={() => send('ask', q)}>{q}</button>)}
       </div>
       <div className="ask-row">
         <textarea
@@ -210,7 +210,7 @@ export function AskPanel({ docked, startWithMic, turns, status, about, onClearAb
           placeholder={mic === 'recording' ? 'Listening…' : turns.length ? 'Reply to NOVA…' : 'Ask NOVA anything…'}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && text.trim() && !busy) {
+            if (e.key === 'Enter' && !e.shiftKey && text.trim()) {
               e.preventDefault()
               send('ask', text.trim())
             }
@@ -220,7 +220,7 @@ export function AskPanel({ docked, startWithMic, turns, status, about, onClearAb
         <button className={`icon-btn ${mic === 'recording' ? 'recording' : ''}`} aria-label={mic === 'recording' ? 'Stop recording' : 'Speak your question'} onClick={() => void toggleMic()} disabled={mic === 'transcribing'}>
           {mic === 'recording' ? <Icon.stop /> : <Icon.mic />}
         </button>
-        <button className="icon-btn send" aria-label="Send" disabled={!text.trim() || mic !== 'idle' || busy} onClick={() => send('ask', text.trim())}><Icon.send /></button>
+        <button className="icon-btn send" aria-label="Send" disabled={!text.trim() || mic !== 'idle'} onClick={() => send('ask', text.trim())}><Icon.send /></button>
       </div>
       {mic === 'recording' && <div className="mic-state"><span className="rec-dot" /> Recording {(elapsed / 1000).toFixed(1)} s / 20 s <button className="link" onClick={cancelMic}>Cancel</button></div>}
       {mic === 'transcribing' && <div className="mic-state">Transcribing on this computer… <button className="link" onClick={cancelMic}>Cancel</button></div>}

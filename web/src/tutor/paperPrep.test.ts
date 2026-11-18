@@ -66,6 +66,21 @@ describe('paper page preparation', () => {
     expect(results).toEqual([])
   })
 
+  it('while the student writes, only the page they are on is drawn; the rest wait for a pause', async () => {
+    const results: string[] = []
+    prep.setPrepListener((id) => results.push(id))
+    prep.prioritise('pg2')
+    prep.notePen(true) // pen down
+    prep.enqueue(tasks())
+    await until(() => results.length === 1)
+    await new Promise((r) => setTimeout(r, 300))
+    expect(results).toEqual(['pg2']) // the others held back while the pen is down
+    prep.notePen(false) // pen up: they start after a short quiet spell
+    await until(() => results.length === 4)
+    expect(results).toEqual(['pg2', 'pg1', 'pg3', 'pg4'])
+    await new Promise((r) => setTimeout(r, 100)) // the queue finishes and releases the PDF
+  })
+
   it('a missing original PDF fails with a clear message instead of hanging', async () => {
     stored.delete('pdf1')
     const errors: string[] = []

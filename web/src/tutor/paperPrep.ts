@@ -71,11 +71,38 @@ function docFor(pdfAssetId: string): Promise<PdfDoc> {
 
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
+// Drawing a page blocks the main thread for a few hundred ms on a slow device, which the pen feels. So a page the
+// student is not looking at waits while they write (pen down, or moved in the last second) and starts in the pause.
+const PEN_QUIET_MS = 1000
+let penDown = false
+let lastPen = -Infinity
+let watching = false
+function watchPen() {
+  if (watching || typeof window === 'undefined') return
+  watching = true
+  const seen = () => { lastPen = performance.now() }
+  window.addEventListener('pointerdown', () => { penDown = true; seen() }, { capture: true, passive: true })
+  window.addEventListener('pointermove', (e) => { if (e.buttons) seen() }, { capture: true, passive: true })
+  for (const t of ['pointerup', 'pointercancel'] as const) window.addEventListener(t, () => { penDown = false; seen() }, { capture: true, passive: true })
+}
+/** Test hook: the pen was used just now (or `down` is held). */
+export function notePen(down: boolean) {
+  penDown = down
+  lastPen = performance.now()
+}
+async function waitForPenPause(isFocus: () => boolean) {
+  while (!isFocus() && (penDown || performance.now() - lastPen < PEN_QUIET_MS)) await pause(150)
+}
+
 async function pump() {
   if (running) return
   running = true
+  watchPen()
   try {
     while (queue.length) {
+      // the page the student opened goes first and never waits; the others wait for a pause in the writing
+      await waitForPenPause(() => !queue.length || queue.some((t) => t.pageId === focus))
+      if (!queue.length) break
       const gen = generation
       const at = queue.findIndex((t) => t.pageId === focus)
       const task = queue.splice(at >= 0 ? at : 0, 1)[0]
