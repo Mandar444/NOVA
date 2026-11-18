@@ -93,12 +93,15 @@ async function underQuestion(page, number, dyPage) {
       await page.waitForTimeout(2500)
       r.ask1_s = await askAndWait(page, 'How do I start?', 30000)
       r.ask1 = { reply: (await bubbles(page)).slice(-1)[0], sent: log.requests.filter((q) => q.path === 'tutor').slice(-1)[0] }
-      // revise: a second line, ask again
+      // revise: a second line, ask again (close the Ask panel first: with the test panel open it covers the middle of the paper)
+      r.askPanelBox = await page.evaluate(() => { const e = document.querySelector('.ask-panel'); if (!e) return null; const b = e.getBoundingClientRect(); return [Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height)] })
+      await page.keyboard.press('Escape'); await page.waitForTimeout(300)
       await control({ readings: ['75 = 3 × 5 × 5'] })
       const at2 = await underQuestion(page, '1', 8) // the revision goes on the same answer line, to the right
       await L.draw(page, '75 = 3 x 25', at2.x + 420, at2.y, 40, 5)
       r.write2 = await L.waitReadback(page, '75=3*5*5', 30000)
       await page.waitForTimeout(2500)
+      r.strokesAfterBothLines = (await curPage(page)).strokes // 4 + 9 pen strokes drawn
       r.ask2_s = await askAndWait(page, 'What next?', 30000)
       r.ask2 = { reply: (await bubbles(page)).slice(-1)[0], sent: log.requests.filter((q) => q.path === 'tutor').slice(-1)[0] }
       await page.waitForTimeout(2500) // debounced autosave
@@ -153,6 +156,7 @@ async function underQuestion(page, number, dyPage) {
         r.secondsToMessage = (Date.now() - t) / 1000
         r.shown = (await bubbles(page)).slice(-1)[0]
         await L.stroke(page, [[700, 600], [740, 610], [780, 600]])
+        await page.waitForTimeout(2500) // autosave
         r.inkAfter = (await curPage(page)).strokes === strokes0 + 1
         while ((Date.now() - t) / 1000 < 205) await page.waitForTimeout(1000) // the provider's late answer arrives at 200 s
         r.lateReplyShown = await simReplies(page, /SIM-REPLY to: SLOW200/)

@@ -25,6 +25,7 @@ interface Props {
   onSend: (intent: Intent, question: string, opts?: { voice?: boolean }) => void
   onClose: () => void
   offsetRight?: number // keep clear of a panel on the right (the test panel)
+  onStop?: () => void // stop the answer NOVA is working on
 }
 
 const QUICK_LINE: { label: string; intent: Intent; q: string }[] = [
@@ -37,7 +38,7 @@ const QUICK_LINE: { label: string; intent: Intent; q: string }[] = [
 ]
 const QUICK_PAGE: string[] = ['Add a trigonometry table', 'Write the algebraic identities', 'Explain what I did on this page', 'Give me a similar question to practise']
 
-export function AskPanel({ docked, startWithMic, turns, status, about, onClearAbout, onSend, onClose, offsetRight }: Props) {
+export function AskPanel({ docked, startWithMic, turns, status, about, onClearAbout, onSend, onClose, offsetRight, onStop }: Props) {
   const [text, setText] = useState('')
   const [mic, setMic] = useState<'idle' | 'recording' | 'transcribing'>('idle')
   const [elapsed, setElapsed] = useState(0)
@@ -188,7 +189,7 @@ export function AskPanel({ docked, startWithMic, turns, status, about, onClearAb
             )}
           </div>
         ))}
-        {busy && <div className="bubble tutor thinking"><span className="dots"><i /><i /><i /></span>{status.message}</div>}
+        {busy && <div className="bubble tutor thinking"><span className="dots"><i /><i /><i /></span>{status.message}{onStop && <button className="link" onClick={onStop}>Stop</button>}</div>}
         {status.state === 'error' && (
           <div className="bubble tutor error">
             {status.message} {status.retry && <button className="link strong" onClick={status.retry}>Retry</button>}

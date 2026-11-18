@@ -770,6 +770,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
           onSend={askFromPanel}
           onClose={() => setAsk(null)}
           offsetRight={!phone && testOpen && activeTest && !focus ? 376 : undefined}
+          onStop={nova.cancel}
         />
       )}
       {sheet && <ObjectSheet obj={sheet} onClose={() => setSheet(null)} />}
