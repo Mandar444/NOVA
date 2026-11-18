@@ -58,7 +58,7 @@ def test_next_step_in_prose_is_not_given_away(monkeypatch):
     monkeypatch.setattr(services, "provider", fake)
     j = client.post("/api/v1/tutor", json=body("Where did I go wrong?", current="2x + 3 = 14")).json()
     assert "2x + 6 = 14" not in j["explanation"] and "2x + 6 = 14" not in (j["detail"] or "")
-    assert j["explanation"].startswith("The 2 must multiply BOTH terms") and "next line" in j["explanation"]
+    assert j["explanation"].startswith("The 2 must multiply BOTH terms") and "next step yourself" in j["explanation"]
     assert "Then subtract 6." in j["detail"]
 
 
@@ -106,3 +106,68 @@ def test_superscript_square_is_a_clean_error_not_a_crash():
         parse_equation("x² - 5x + 6 = 0")
     except MathError:
         pass  # handled: the exact engine then compares solution sets instead
+
+
+# ---- intent-aware policy: hint / explain / solution
+def mode_of(question, intent="ask", exam=None):
+    return services.teaching_mode(TutorRequest.model_validate(body(question, intent=intent, exam=exam)))
+
+
+def test_teaching_mode_follows_the_request():
+    assert mode_of("What next?") == "hint"
+    assert mode_of("Where did I go wrong?") == "hint"
+    assert mode_of("Explain why, not just what to do.") == "explain"
+    assert mode_of("I still don't understand") == "explain"
+    assert mode_of("Show me the full worked solution") == "solution"
+    assert mode_of("Why is it wrong?", intent="hint") == "hint"  # the Hint button stays a hint
+    assert mode_of("", intent="complete") == "solution"
+    exam = {"number": "3", "text": "Solve 2(x + 3) = 14", "answer": "x = 4", "reveal": False}
+    assert mode_of("Show me the full solution", exam=exam) == "hint"  # an unrevealed test never gives the solution
+
+
+def test_hint_leaves_out_whole_sentences_never_patches_them(monkeypatch):
+    fake = Fake('{"say":"Good start: the bracket is expanded. Then you will find x = 4.","next":"What can you subtract from both sides?","actions":[]}')
+    monkeypatch.setattr(services, "provider", fake)
+    j = client.post("/api/v1/tutor", json=body("What next?", current="2x + 6 = 14")).json()
+    assert j["explanation"] == "Good start: the bracket is expanded. What can you subtract from both sides?"
+    assert "?" not in j["explanation"].replace("sides?", "")  # no "x = ?" patched into a sentence
+
+
+def test_explain_keeps_the_explanation_whole(monkeypatch):
+    fake = Fake('{"say":"2(x + 3) means two groups of (x + 3), so the 2 multiplies both: 2(x + 3) = 2x + 6.",'
+                '"next":"Look at your line again: which term changed?","detail":"So 2(x + 3) = 14 becomes 2x + 6 = 14, because 2 × 3 = 6.",'
+                '"actions":[{"type":"write_equation","anchorRegionId":"rP","expression":"2x + 6 = 14","purpose":"hint"}]}')
+    monkeypatch.setattr(services, "provider", fake)
+    j = client.post("/api/v1/tutor", json=body("Explain why, not just what to do.", current="2x + 3 = 14")).json()
+    assert "2x + 6 = 14" in j["detail"] and "2(x + 3) = 2x + 6" in j["explanation"]
+    assert not [a for a in j["actions"] if a["type"] == "write_equation"]  # their next line is still not written for them
+
+
+def test_requested_solution_is_complete_and_checked(monkeypatch):
+    # the model's steps contain a wrong line (2x = 7): NOVA writes its exact ordered steps instead
+    fake = Fake('{"say":"Here is the full solution.","next":"","actions":[{"type":"write_lines","anchorRegionId":"page","title":"t",'
+                '"lines":["2(x + 3) = 14","2x + 6 = 14","2x = 7","x = 3.5"]}]}')
+    monkeypatch.setattr(services, "provider", fake)
+    j = client.post("/api/v1/tutor", json=body("Show me the full worked solution")).json()
+    lines = [a for a in j["actions"] if a["type"] == "write_lines"][0]["lines"]
+    assert lines[0].replace(" ", "") == "2(x+3)=14" and lines[-1].replace(" ", "").startswith("x=4")
+    assert not any("2x = 7" in x for x in lines)
+    assert j["explanation"] == "Here is the full solution."
+
+
+def test_requested_solution_with_valid_steps_is_kept_as_written(monkeypatch):
+    fake = Fake('{"say":"Here it is.","next":"","detail":"x = 4 because 8 ÷ 2 = 4.","actions":[{"type":"write_lines","anchorRegionId":"page","title":"t",'
+                '"lines":["2x + 6 = 14   (2 multiplies both terms)","2x = 8   (subtract 6)","x = 4   (divide by 2)"]}]}')
+    monkeypatch.setattr(services, "provider", fake)
+    j = client.post("/api/v1/tutor", json=body("Show me the full worked solution")).json()
+    assert [a for a in j["actions"] if a["type"] == "write_lines"][0]["lines"][-1].startswith("x = 4")
+    assert j["detail"] == "x = 4 because 8 ÷ 2 = 4."  # nothing withheld when the solution was asked for
+
+
+def test_unrevealed_test_answer_is_never_given(monkeypatch):
+    fake = Fake('{"say":"Expand the bracket first. The answer is x = 4.","next":"What is 2 × 3?","actions":[]}')
+    monkeypatch.setattr(services, "provider", fake)
+    exam = {"number": "3", "text": "Solve 2(x + 3) = 14", "answer": "x = 4", "reveal": False}
+    j = client.post("/api/v1/tutor", json=body("Show me the full solution", exam=exam)).json()
+    assert "4" not in j["explanation"].replace("2 × 3", "")
+    assert j["explanation"].startswith("Expand the bracket first.")

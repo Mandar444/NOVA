@@ -324,6 +324,11 @@ def _build_prompt(req: TutorRequest, known: set[str], check: CheckResponse | Non
             f"READING UNCONFIRMED: NOVA may have misread the line \"{req.current.text}\". Do not judge it yet: in \"say\" only ask the "
             "student to confirm what they wrote (offer the likely alternative), \"next\" = \"Tap the line to correct it if NOVA misread it.\", no actions."
         )
+    lines.append({
+        "hint": "TEACHING MODE: hint. Give one useful next thought or question; leave their next line and the final answer to them.",
+        "explain": "TEACHING MODE: explain. Explain the idea and WHY clearly, using their own work as the example; you may show how a step works, but leave the final value to them.",
+        "solution": "TEACHING MODE: solution. Give the complete ordered worked solution, one step per line with its reason; hold nothing back.",
+    }[teaching_mode(req)])
     if req.exam:
         note = EXAM_REVIEW if req.exam.reveal else EXAM_NOTE
         lines.append(note.format(number=req.exam.number, text=req.exam.text, answer=req.exam.answer))
@@ -349,22 +354,94 @@ _EQ_IN_TEXT = re.compile(rf"{_TOK}(?:[ ]*{_TOK})*[ ]*=[ ]*{_TOK}(?:[ ]*{_TOK})*"
 _SENTENCE = re.compile(r"[^.!?]*(?:[.!?](?!\d)|$)")
 
 
-def _hide_steps_in_text(req: TutorRequest, text: str | None, hide: bool) -> str | None:
-    """Prose that hands the student their own next line ("write 2x + 6 = 14") loses that sentence.
-    Lines already on the page (the student's own work) can still be quoted."""
-    if not text or not hide:
+_EXPLAIN_Q = re.compile(r"\b(why|explain\w*|understand\w*|meaning|mean|concept|reason|how (does|do|did|is|come))\b", re.IGNORECASE)
+
+
+def teaching_mode(req: TutorRequest) -> str:
+    """What the student asked for decides what NOVA shows.
+    solution: an explicit request for the worked solution (or Solve/complete, or a finished test's review): ordered,
+              checked steps; nothing is withheld.
+    explain:  the idea and the why, using the student's own work as the example. The reply text is not filtered; NOVA
+              still does not write their next line or the final value onto the page for them.
+    hint:     one useful next thought; the student's next line and the final answer stay theirs to find.
+    A test question that has not been revealed is always hint."""
+    if req.exam and not req.exam.reveal:
+        return "hint"
+    if req.intent == "complete" or wants_full_solution(req) or (req.exam and req.exam.reveal):
+        return "solution"
+    if req.intent == "explain" or (req.intent == "ask" and _EXPLAIN_Q.search(req.question or "")):  # a typed question decides; the Hint button stays a hint
+        return "explain"
+    return "hint"
+
+
+def _gives_value(sentence: str, values: list[str], written: set[str]) -> bool:
+    for v in values:
+        if any(re.search(r"=" + re.escape(v.replace(" ", "").lower()) + r"$", w) for w in written):
+            continue  # the student already wrote this value: NOVA may talk about it
+        if re.search(r"(=|\bis|\bequals|\bmakes|\bgives)\s*" + re.escape(v) + r"(?![\d.]*\d|/\d)", sentence, re.IGNORECASE):
+            return True
+    return False
+
+
+def _hint_text(req: TutorRequest, text: str | None, values: list | tuple = ()) -> str | None:
+    """Hint mode only: a sentence that hands over the student's next line or the final answer is left out whole
+    (never patched mid-sentence). Lines already on the page (the student's own work) can still be quoted."""
+    if not text or teaching_mode(req) != "hint":
         return text
+    vals = [str(v) for v in values if v]
     written = {_shape_eq(x.text) for x in ([req.problem] if req.problem else []) + ([req.current] if req.current else []) + list(req.pageLines or []) if x and x.text}
+
     def leaks(sentence: str) -> bool:
+        if _gives_value(sentence, vals, written):
+            return True
         for m in _EQ_IN_TEXT.finditer(sentence):
             eq = m.group(0).strip(" +-−*/^×·").replace("−", "-")
-            if re.fullmatch(r"[a-z]\s*=\s*-?[\d./]+", eq):
-                continue  # a final answer is redacted to "x = ?" elsewhere, keeping the sentence
             if "=" in eq and _shape_eq(eq) not in written and _is_students_step(req, eq, True):
                 return True
         return False
-    kept = [s for s in (m.group(0) for m in _SENTENCE.finditer(text)) if s.strip() and not leaks(s)]
-    return " ".join(s.strip() for s in kept)
+
+    kept = [x for x in (m.group(0) for m in _SENTENCE.finditer(text)) if x.strip() and not leaks(x)]
+    return " ".join(x.strip() for x in kept)
+
+
+_TRY_IT = "Try that next step yourself, then I'll check it."
+
+
+def _checked_solution(req: TutorRequest, actions: list, rid: str) -> list:
+    """Solution mode: every equation line written must keep the problem's solutions. If a line breaks it (or the reply
+    has no worked lines) and NOVA's engine can solve the problem, its exact ordered steps are written instead."""
+    if not req.problem or not req.problem.text:
+        return actions
+    prob = req.problem.text
+
+    def broken(line: str) -> bool:
+        eq = re.split(r"\s{2,}|\s+\(|\s+[-–—]\s", line, maxsplit=1)[0]
+        if "=" not in eq:
+            return False
+        try:
+            return check_step(prob, eq).status == "different"
+        except (MathError, ValueError, ZeroDivisionError):
+            return False
+
+    written = [a for a in actions if a.type == "write_lines"]
+    if written and not any(broken(x) for a in written for x in a.lines):
+        return actions
+    try:
+        steps = explained_steps(prob)
+    except (MathError, ValueError, ZeroDivisionError):
+        steps = None
+    if not steps:
+        for a in written:  # no exact solver for this form: keep only the lines that hold
+            keep = [k for k, x in enumerate(a.lines) if not broken(x)]
+            a.lines = [a.lines[k] for k in keep]
+            a.inks = [a.inks[k] for k in keep if k < len(a.inks)]
+            a.verified = [a.verified[k] for k in keep if k < len(a.verified)]
+        return [a for a in actions if not (a.type == "write_lines" and not a.lines)]
+    lines = [clean_math(prob, 80)] + [clean_math(f"{st['text']}   ({st['note']})" if st.get("note") else st["text"], 80) for st in steps]
+    sol = _action_adapter.validate_python({"id": f"{rid}:s", "type": "write_lines", "anchorRegionId": "page", "title": "Worked solution",
+                                           "lines": lines, "inks": ["black"] + ["blue"] * (len(lines) - 1)})
+    sol.verified = [True] * len(lines)
+    return [a for a in actions if a.type != "write_lines"] + [sol]
 
 
 def _validate_actions(raw_actions: Any, req: TutorRequest, known: set[str], answer: str | None, value: str | None = None) -> list[Any]:
@@ -372,7 +449,8 @@ def _validate_actions(raw_actions: Any, req: TutorRequest, known: set[str], answ
     if not isinstance(raw_actions, list):
         return out
     rid = str(req.context.requestId)
-    hide = req.intent != "complete"
+    hide = teaching_mode(req) != "solution"  # the student's next line and solved form are never written for them
+    hidden = [x for x in (answer, value) if x]
     for item in raw_actions:
         if len(out) >= MAX_ACTIONS:
             break
@@ -385,7 +463,7 @@ def _validate_actions(raw_actions: Any, req: TutorRequest, known: set[str], answ
         aid = f"{rid}:{len(out)}"
 
         def red(t: str) -> str:
-            return _redact_value(_redact_answer(t, answer if hide else None), value if hide else None)
+            return _hint_text(req, t, hidden) or ""
 
         try:
             if typ == "highlight_region":
@@ -467,7 +545,7 @@ def _validate_actions(raw_actions: Any, req: TutorRequest, known: set[str], answ
     return out
 
 
-async def _ask_model(req: TutorRequest, known: set[str], check: CheckResponse | None) -> tuple[str, list[dict], str]:
+async def _ask_model(req: TutorRequest, known: set[str], check: CheckResponse | None, values: list | tuple = ()) -> tuple[str, list[dict], str]:
     rid = str(req.context.requestId)
     reply = await provider.generate(TUTOR_INSTRUCTIONS, _build_prompt(req, known, check), max_tokens=800 if wants_full_solution(req) else 600, request_id=rid)
     if reply.incomplete:
@@ -476,16 +554,16 @@ async def _ask_model(req: TutorRequest, known: set[str], check: CheckResponse | 
         obj = parse_json_object(reply.text)
     except ValueError:
         raise ApiError("INVALID_MODEL_OUTPUT", "The tutor reply could not be read. Retry.", rid)
-    hide = req.intent != "complete"
-    say, nxt = clean_text(obj.get("say"), 260), clean_text(obj.get("next"), 200)
-    had = bool(say or nxt)
-    say, nxt = _hide_steps_in_text(req, say, hide), _hide_steps_in_text(req, nxt, hide)
-    if had and not (say or nxt):
-        nxt = "Try writing that next line yourself, then I'll check it."
-    elif had and say and not nxt:
-        nxt = "Try that on your next line."
-    explanation = " ".join(x for x in (say, nxt) if x) or _hide_steps_in_text(req, clean_text(obj.get("explanation"), 400), hide)
-    _DETAIL.set(_hide_steps_in_text(req, clean_text(obj.get("detail"), 900), hide) or None)
+    vals = [v for v in values if v]
+    say0, nxt0 = clean_text(obj.get("say"), 260), clean_text(obj.get("next"), 200)
+    say, nxt = _hint_text(req, say0, vals), _hint_text(req, nxt0, vals)
+    if (say0 or nxt0) and not (say or nxt):
+        nxt = _TRY_IT
+    elif nxt0 and not nxt:
+        nxt = _TRY_IT
+    legacy = clean_text(obj.get("explanation"), 400)
+    explanation = " ".join(x for x in (say, nxt) if x) or _hint_text(req, legacy, vals) or (_TRY_IT if legacy else "")
+    _DETAIL.set(_hint_text(req, clean_text(obj.get("detail"), 900), vals) or None)
     _NOTE.set(say if say and nxt else None)  # the page shows the focused point; the chat also has the next step
     if not explanation:
         raise ApiError("INVALID_MODEL_OUTPUT", "The tutor reply was empty. Retry.", rid)
@@ -512,13 +590,9 @@ async def tutor(req: TutorRequest) -> TutorResponse:
     anchor = req.current.regionId if req.current else (req.problem.regionId if req.problem else ctx.regionId)
 
     def done(explanation: str, actions: list, check=None, verified="none", model=None) -> TutorResponse:
-        detail = _DETAIL.get()
-        if detail and req.exam and not req.exam.reveal:
-            detail = _redact_value(detail, _final_value(req.exam.answer) or None)
-        elif detail and not wants_full_solution(req) and req.intent != "complete":
-            detail = _redact_answer(detail, _unique_solution(req.problem.text if req.problem else None))
+        detail = _DETAIL.get()  # already filtered for the teaching mode in _ask_model
         return TutorResponse(
-            context=ctx, explanation=explanation, detail=detail, note=_redact_answer(_NOTE.get() or "", None) or None if _NOTE.get() and explanation.startswith(_NOTE.get() or "") else None, actions=actions, check=check, verifiedBy=verified, model=model,
+            context=ctx, explanation=explanation, detail=detail, note=_NOTE.get() if _NOTE.get() and explanation.startswith(_NOTE.get() or "") else None, actions=actions, check=check, verifiedBy=verified, model=model,
             latencyMs=int((time.perf_counter() - started) * 1000),
         )
 
@@ -563,9 +637,9 @@ async def tutor(req: TutorRequest) -> TutorResponse:
             return done("Here is the finished line, worked out exactly by NOVA.", [act], verified="deterministic")
         if req.intent == "check":
             return done("This line isn't finished yet. Write your answer after '=', then check again.", [], verified="deterministic")
-        expl, raw, model = await _ask_model(req, known, None)
         hidden = r.answer if r.status == "answered" else None
-        return done(_redact_value(expl, hidden), _validate_actions(raw, req, known, None, hidden), verified="model", model=model)
+        expl, raw, model = await _ask_model(req, known, None, [hidden])
+        return done(expl, _validate_actions(raw, req, known, None, hidden), verified="model", model=model)
 
     # ---- arithmetic lines (3 + 2 =, 12 / 4 = 3, 2^3 = 8)
     if target and looks_arithmetic(target.text):
@@ -587,8 +661,7 @@ async def tutor(req: TutorRequest) -> TutorResponse:
             return done(msg, [], check=check, verified="deterministic")
         try:
             hint_req = req.model_copy(update={"intent": "hint" if req.intent == "complete" else req.intent})
-            expl, raw, model = await _ask_model(hint_req, known, check)
-            expl = _redact_value(expl, ar.value)
+            expl, raw, model = await _ask_model(hint_req, known, check, [ar.value])
             acts = _validate_actions(raw, hint_req, known, None, ar.value)
         except ApiError as e:
             if req.intent not in ("check", "complete"):
@@ -634,8 +707,8 @@ async def tutor(req: TutorRequest) -> TutorResponse:
         model = None
         if check.status == "different":
             try:
-                expl, raw, model = await _ask_model(req, known, check)
-                explanation = _redact_answer(expl, _unique_solution(req.problem.text if req.problem else None))
+                expl, raw, model = await _ask_model(req, known, check, [_unique_solution(req.problem.text if req.problem else None)])
+                explanation = expl
                 extra = [a for a in _validate_actions(raw, req, known, _unique_solution(req.problem.text if req.problem else None)) if a.type != "highlight_region"]
                 for a in extra[: MAX_ACTIONS - len(actions)]:
                     a.id = f"{rid}:{len(actions)}"
@@ -652,7 +725,7 @@ async def tutor(req: TutorRequest) -> TutorResponse:
         if check and check.status == "different":
             hint_req = req.model_copy(update={"intent": "hint"})
             try:
-                expl, raw, model = await _ask_model(hint_req, known, check)
+                expl, raw, model = await _ask_model(hint_req, known, check, [_unique_solution(req.problem.text)])
                 acts = _validate_actions(raw, hint_req, known, _unique_solution(req.problem.text))
             except ApiError:
                 expl, acts, model = "This line doesn't match the problem yet, so NOVA won't continue from it. Look again at the step before it.", [], None
@@ -714,12 +787,13 @@ async def tutor(req: TutorRequest) -> TutorResponse:
     # ---- ask / hint / explain: model hint, validated actions
     if not req.problem and not req.current and not req.question.strip():
         raise ApiError("INVALID_INPUT", "Select some work or type a question first.", rid, retryable=False)
-    answer = None if wants_full_solution(req) else _unique_solution(req.problem.text if req.problem else None)
-    explanation, raw, model = await _ask_model(req, known, check)
-    explanation = _redact_answer(explanation, answer)
-    if req.exam and not req.exam.reveal and req.intent != "complete":
-        explanation = _redact_value(explanation, _final_value(req.exam.answer) or None)
-    actions = await _verify_written(_validate_actions(raw, req, known, answer))
+    mode = teaching_mode(req)
+    answer = None if mode == "solution" else _unique_solution(req.problem.text if req.problem else None)
+    exam_value = (_final_value(req.exam.answer) or None) if req.exam and not req.exam.reveal and req.exam.answer else None
+    explanation, raw, model = await _ask_model(req, known, check, [answer, exam_value])
+    actions = await _verify_written(_validate_actions(raw, req, known, answer, exam_value))
+    if mode == "solution" and not req.exam:
+        actions = _checked_solution(req, actions, rid)
     return done(explanation, actions, check=check, verified="deterministic" if check else "model", model=model)
 
 

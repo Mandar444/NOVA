@@ -197,14 +197,15 @@ export function useNova(o: Options) {
     if (!now || !cur || cur.sourceHash !== sourceHash || res.kind === 'none') return false
     // (the Solve button takes any answer, mark or worked solution NOVA can give)
     const id = `auto:${regionId}:${sourceHash}`
-    // "x =" / "x = ?" under a problem NOVA already worked out: just write the value next to the question
+    // Worked solutions are shown only when asked for: the Solve button (force) or a request in Ask. Writing "x = ?",
+    // "solve …" or an equation by itself gets NOVA's mark and the Solve/Ask buttons, never the solution unasked; the
+    // value of an unknown ("x =" under a problem) is held back the same way. Plain arithmetic ("4 + 2 =") is still finished.
+    if (!force && (res.kind === 'solution' || (res.kind === 'answer' && problemId && isQuestion(text)))) return false
+    // "x =" / "x = ?" (Solve tapped) under a problem NOVA already worked out: just write the value next to the question
     if (res.kind === 'solution' && problemId && isQuestion(text) && res.answer && now.tutorObjects.some((t) => t.anchorRegionId === problemId && t.status === 'active' && t.action.type === 'write_ink' && t.action.purpose === 'completion')) {
       const value = res.answer.includes('=') ? res.answer.split('=').pop()!.trim() : res.answer
       res = { ...res, kind: 'answer', answer: value }
     }
-    // An equation the student has written is theirs to solve: NOVA marks and offers Solve, but does not write the
-    // solution unasked. Lines that ask ("x = ?", "4 + 2 =", "find …") and the Solve button (force) are answered.
-    if (!force && res.kind === 'solution' && /=/.test(text) && !/=\s*$/.test(text) && !isQuestion(text)) return false
     if (res.kind === 'solution' && res.steps?.length) {
       // the whole worked solution, one step per line, under the student's line in their style
       const style = styleFromRegion(now, cur)

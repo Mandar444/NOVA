@@ -19,13 +19,15 @@ NOVA reads it, checks it, and answers **right next to it, in handwriting**. No t
 
 ## What NOVA does
 
+NOVA marks your lines and finishes plain arithmetic by itself. Worked solutions appear only when you ask: tap **Solve** under the line, or ask NOVA for the full solution.
+
 | You write | NOVA writes |
 |---|---|
 | `4 + 2 =` | **6** beside the `=` |
-| `3x + 2 = 11` | every step, with **red arrows** showing what moved across `=` and *why* — made for beginners |
+| `3x + 2 = 11`, then **Solve** | every step, with **red arrows** showing what moved across `=` and *why* — made for beginners |
 | `4 + 2 = 7` | a red ✗ (and a ✓ when you're right) |
 | `y = 2x + 1` | the graph |
-| `f(x) = 3x² + 5x + 7`, `f′(2) = ?` | f′(x) = 6x + 5 → … → **f′(2) = 17** |
+| `f(x) = 3x² + 5x + 7`, `f′(2) = ?`, then **Solve** | f′(x) = 6x + 5 → … → **f′(2) = 17** |
 | `3 + 4 + … + 100` | **5047**, with the AP formula |
 | `A ∪ B`, limits, integrals, logs, trig, probability | worked solutions |
 | `[1 2; 3 4] × [5 6; 7 8]`, `det`, inverse, `a · b`, `a × b` | vectors & matrices, step by step |
