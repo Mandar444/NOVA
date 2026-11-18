@@ -1,0 +1,10 @@
+const L = require('./lib.cjs'); const path = require('node:path')
+;(async () => {
+  const browser = await L.launch(); const { page } = await L.open(browser)
+  await L.newNotebook(page)
+  await page.locator('input[type=file][accept*=pdf]').last().setInputFiles(path.join(__dirname, '..', 'real4.pdf'))
+  await page.waitForSelector('.test-panel'); await page.waitForTimeout(2500)
+  await L.openAsk(page); await page.waitForTimeout(800)
+  const r = await page.evaluate(() => { const b = (s) => { const e = document.querySelector(s); if (!e) return null; const x = e.getBoundingClientRect(); return [Math.round(x.left), Math.round(x.top), Math.round(x.width), Math.round(x.height), getComputedStyle(e).position] }; return { ask: b('.ask-panel'), test: b('.test-panel'), ws: b('[data-testid=workspace]'), body: document.body.className, root: document.querySelector('#root > div')?.className } })
+  console.log(JSON.stringify(r)); await L.shot(page, 'overlap_ask_test'); await browser.close()
+})()
