@@ -2,50 +2,62 @@
 
 _Last updated: 2026-11-18_
 
-## QA checkpoint — PAUSED (2026-11-18)
-Paused by the low-memory safeguard (≈1 GB free of 16 GB). Nothing below is deployed; origin/main is still afa2e60.
+## QA checkpoint — PAUSED (2026-11-18, evening)
+Paused twice by the low-memory safeguard (1–2 GB free of 16 GB). Nothing here is deployed; origin/main is still afa2e60.
 
-**Test copy:** git worktree `%TEMP%\claude\…\scratchpad\q` (full path in the session notes), branch **`qa-journeys`**,
-base **afa2e60** (= origin/main). Checkpoint = the commit on `qa-journeys` that adds this section (local only, not pushed).
-The user's main checkout (`Desktop/Nova`, 12 uncommitted files from the 5 Nov PDF experiment) is untouched.
+**Test copy:** git worktree under the session scratchpad (`…\scratchpad\q`), branch **`qa-journeys`** (local only, not pushed):
+`01fcdd2` checkpoint · `51965bc` QA scripts · `ee3d885` prose giveaway + voice review · `e8694a7` Ask while busy + pen-aware page prep
+(+ the commit that adds this section). Base afa2e60. The user's main checkout (`Desktop/Nova`, 12 uncommitted files) is untouched.
+Checks on the branch: server pytest **200 passed**, web vitest **20 passed**, `tsc -b` clean, `npm run build` ok.
 
-**Unfinished fixes in the checkpoint (unit/type checks pass: tsc clean, server 198, web 19; behaviour only partly re-verified):**
-| File | Change |
+**Changes on the branch (vs afa2e60)**
+| Area | Change |
 |---|---|
-| `server/app/services.py`, `schemas/models.py`, `web/src/tutor/api.ts` | `note` = the focused point only, for the card on the page; chat keeps say + next |
-| `web/src/tutor/useNova.ts` | equation lines the student writes are not solved unasked (marks + Solve tap; "x = ?", "4 + 2 =", Solve button still answer); exam Ask uses the student's latest work under the question; one live reply card (earlier reply cards retire, chat keeps history) |
-| `web/src/tutor/layout.ts` | cards go right of the student's writing in that band (page grows), never in the writing lane below; leader line if moved >160 px |
-| `web/src/tutor/usePaper.ts` | Help sends the student's latest answer line under the question |
-| `web/src/notebook/NotebookScreen.tsx` | Ask on a paper page is grounded in the printed question in focus (latest-work question, else first visible) |
-| `web/src/ui/AskPopover.tsx` | docked Ask panel sits left of the open test panel (did cover the Help buttons) |
+| Tutor reply | page card = the focused point only (`note`); chat keeps say + next |
+| Tutor prose | a sentence of say/next/detail that contains the student's next correct form of the problem is dropped (A2 said "write 2x + 6 = 14"); lines already on the page and the final answer (redacted to "x = ?") are untouched; full-solution requests untouched |
+| Auto reactions | an equation the student writes is marked, not solved unasked (Solve tap, "x = ?", "4 + 2 =" still answer) — **changes the old demo** "write 3x + 2 = 11 → arrows" |
+| Cards | right of the student's writing in that band (page grows), never in the writing lane; one live reply card (older reply cards retire; chat keeps all) |
+| Paper Ask/Help | grounded in the printed question in focus + the student's latest line under it; docked Ask panel sits left of the test panel |
+| Ask while busy | Send/Enter/chips work while NOVA is answering; the new question replaces the pending one (was: blocked up to 110 s unless Stop) |
+| Voice | transcript goes into the box for review, student presses Send (browser-speech path had auto-sent since d23b622); reply still spoken |
+| PDF prep | pages the student is not looking at wait while the pen is down or used in the last 1 s |
 
-**Fixed after checkpoint (unit-tested, not yet re-run with the model):** prose giveaway — A2 reply said "On your line, write 2x + 6 = 14"; `_hide_steps_in_text` now drops a sentence of say/next/detail that contains the student's next correct form of the problem (lines already on the page and the final answer, which is redacted to "x = ?", are not affected; full-solution requests untouched). tests/test_teaching.py +2.
-**Voice:** transcript review + Send restored as the default on the browser-speech path (it had sent on pause since d23b622); the reply is still spoken.
-**Deadline note:** each request is capped at 118 s, but an Ask that first has to read a line makes two requests (read, then tutor), so up to ~236 s; Stop returns the panel to idle at once in either stage. The 774 s / 1952 s waits in the partial run also overran the harness's own 130 s wait, so the test machine itself stalled (memory pressure); to be verified with a slow fake provider in gate D.
-
-**Tests (real glm-5.3-flash through the local build unless marked):**
+**Results** (real = glm-5.3-flash through this build; EMULATED marked; device = headless Chrome, synthetic mouse)
 | Gate | Case | Result |
 |---|---|---|
-| B auto handwriting | literal wrong maths `4 + 2 = 7`, no clicks | PASS (readback 6.0 s, ✗ mark, 1 recognize call) |
-| | no reread of unchanged line | PASS |
-| | edit reread / erase reread | PASS (4.2 s / 4.1 s) |
-| | stale reading rejected (response held 8 s by test = emulated delay, real model) | PASS |
-| | stroke during request 319 ms vs 291 ms idle | **NOT an input-latency measurement**: that is the wall time of the scripted 40-point mouse gesture; input-to-paint not yet measured |
-| | stale tutor reply after page change; newer question supersedes older | NOT RUN |
-| A teaching (before fixes) | F1 Ask on paper "no problem"; F2 Ask panel over Help; F3 unprompted solution; F4 cards over student lines (50–72 %); F5 cards pile up; F6 switched question → invented problem | FAILED → fixed in checkpoint |
-| A teaching (after fixes, partial) | A1 Ask on paper (grounded, Q1 hint) · Help on Q3 · A4 still confused (changed approach, picture) | PASS (2.5 / 3.0 / 2.3 s) |
-| | A2 wrong step | grounded, correct diagnosis, but **gives the next step** → FAIL (open defect) |
-| | A5 explain why · A3 correct step · A6 full solution | **UNVERIFIED** — provider "model is busy" / ConnectError; waits of 774 s and 1952 s exceed the 118 s client deadline → must be investigated (machine stall under memory pressure vs deadline bug) |
-| | A7 ambiguous handwriting · A8 switch question | NOT RUN |
-| C 4-page PDF (`real4.pdf`, CBSE 2018 SQP p1–4) | visible / writable timings, write while preparing, ink/zoom/page kept, failure, cancel, reload | NOT RUN on this build (earlier synthetic-paper numbers in RESULTS.md) |
-| D full session | create → import → write → ask → revise → close → reopen; provider failure / cancel during long wait | NOT RUN |
+| auto handwriting | literal `4 + 2 = 7`, no reread, edit/erase reread, stale reading rejected (emulated 8 s hold) | PASS (real) |
+| | stale tutor reply after page change · newer question supersedes | NOT VERIFIED (session run killed) |
+| A teaching | F1–F6 (paper Ask ungrounded, panel over Help, unprompted solution, cards over writing, card pile-up, wrong question after switch) | fixed; A1 paper Ask, Help Q3, A4 still-confused PASS (real, first rerun) |
+| | A2 wrong step | grounded + correct diagnosis but gave the step away → fixed in code (unit test); **re-run UNVERIFIED**: provider "model is busy" twice (provider request ids 5081af3b…, ddc78e62…) |
+| | A5 why · A3 correct step · A6 full solution · A7 ambiguous · A8 switch | **UNVERIFIED** — not run (provider failing; script stops after 2 provider errors) |
+| B 4-page PDF (real4.pdf), AI analysis held open (EMULATED) | first page visible / writable / all 4 ready, CPU 1×, n=5 | visible 0.58–0.73 s, writable 0.89–1.05 s, all ready 2.33–2.56 s (pen-aware build; 0.80–1.64 s before it) |
+| | same, CPU 4× slower, n=3 | visible 2.7–2.9 s, writable 4.6–5.0 s, all ready 7.6–7.9 s |
+| | drawing does not wait for AI | PASS (analysis never answered; all pages drawn) |
+| | write while preparing (CPU 6×): zoom 400 %, 3 strokes | PASS: 3 strokes saved, zoom unchanged, active page unchanged |
+| | page 2 fails (EMULATED IndexedDB error) | PASS: "Couldn't prepare this page … Retry", pages 3–4 continue, Retry draws it, ink kept |
+| | cancel = close notebook mid-import | PASS: drawing stops (1 in-flight page finishes, not saved); reopen resumes, all ready 7.4 s later, ink kept |
+| | reload mid-import | PASS: all ready 3.4 s after reload, ink kept |
+| | real-model question finding (run Q) | NOT RUN (provider) |
+| Pen latency (new measure) | pointermove → next frame, 40-point stroke, n=3 each | CPU 1×: p50 3 ms, max 8 ms, idle and during a pending read. CPU 4×: p50 10 ms, max 43 ms |
+| | while PDF pages prepare | CPU 1×: p95 6–20 ms (was 34–59 before pen-aware prep). CPU 4×: p95 130–140 ms (was 128–238); long tasks up to 330–490 ms from the page already being drawn |
+| | the old "319 ms" | was the wall time of the scripted 40-point gesture (≈290–360 ms idle too), not latency |
+| | pen down/up → paint 280–300 ms (CPU 1×) during a pending read | input delay 1 ms, no long tasks: headless Chrome produced no frame because pen-down changes nothing on screen; not a main-thread block. Not checked on a real device |
+| C full session | create → import → write → ask → revise → close → reopen; provider 503 / 110 s timeout / Stop / stale | **NOT VERIFIED** — run killed by low-memory safeguard during the real-model part, no results recorded |
 
-**Processes:** test servers (vite preview :5190 from `q/web/dist`, backend :8011 from `q/server`) were stopped at this checkpoint to free memory.
-Restart: `cd q/server && ../../../Desktop/Nova/server/.venv/Scripts/python -m uvicorn app.main:app --host 127.0.0.1 --port 8011` and
-`cd q/web && npm run build && NOVA_BACKEND=http://127.0.0.1:8011 npx vite preview --host 127.0.0.1 --port 5190 --strictPort` (preview proxies /api to NOVA_BACKEND).
+**Known limits:** an Ask that first has to read a line makes two requests (read, then tutor), each capped at 118 s, so up to ~236 s;
+Stop returns the panel to idle at once in either stage (code reading; not yet exercised). The 774 s / 1952 s waits in the first partial run
+also overran the harness's own 130 s wait, so the machine itself stalled under memory pressure.
 
-**Exact next test (one browser, sequential):** fix the prose giveaway, then `SKIP_PAPER=1 node qa/a_teach.cjs after2` (handwritten part:
-A2, A4, A5, A3, A6, A8), then A7 ambiguous handwriting. A provider error marks that case UNVERIFIED; do not retry more than once.
+**Processes:** stable build left running for QA: preview **http://127.0.0.1:5190** (q/web/dist) → backend **:8011** (q/server, key from
+`Desktop/Nova/server/.env` loaded into the process environment, never copied). Failure-test servers (:8012 backend, :8013 fake provider) stopped.
+Restart: `cd q/server && (set -a; . <Nova>/server/.env; set +a; <Nova>/server/.venv/Scripts/python -m uvicorn app.main:app --host 127.0.0.1 --port 8011)`;
+`cd q/web && npm run build && NOVA_BACKEND=http://127.0.0.1:8011 npx vite preview --host 127.0.0.1 --port 5190 --strictPort`.
+Failure servers: `python tests/qa/fake_provider.py 8013`; backend :8012 with `BHARATCODE_API_KEY=fake-key BHARATCODE_BASE_URL=http://127.0.0.1:8013`.
+
+**Exact next tests (one browser, sequential, only with ≥3 GB free):**
+1. `node tests/qa/d_session.cjs 2` (EMULATED provider failures; needs :8012/:8013) — no load on BharatCode.
+2. When BharatCode answers again: `SKIP_PAPER=1 node tests/qa/a_teach.cjs after3`, then `node tests/qa/d_session.cjs 1`, then `node tests/qa/c_pdf.cjs Q`.
+A provider error marks that case UNVERIFIED; at most one retry.
 
 ## Running
 | Process | URL | Command |
