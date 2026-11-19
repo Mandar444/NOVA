@@ -1,0 +1,265 @@
+/* Practice, sharing, progress and first-run. Tokens only, so light and dark both work. */
+
+/* ---- working banner (making a practice sheet) */
+.busy-banner { position: fixed; left: 50%; top: 112px; transform: translateX(-50%); z-index: 45; display: inline-flex; align-items: center; gap: 10px; max-width: calc(100vw - 32px); padding: 10px 16px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow-2); font-size: 14px; color: var(--text); }
+.phone .busy-banner { top: 60px; }
+
+/* ---- practice dialog */
+.dialog-head h2 { display: inline-flex; align-items: center; gap: 8px; }
+.practice-dialog .practice-src { display: flex; flex-direction: column; gap: 2px; margin: 6px 0 10px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--line-soft); }
+.practice-dialog .practice-src .row { margin: 4px 0; }
+.practice-dialog .mono { font-family: var(--mono); font-weight: 600; }
+.practice-topic { width: 100%; height: 44px; border: 1px solid var(--rule-2); border-radius: 10px; padding: 0 12px; font-size: 15px; background: var(--surface); margin: 6px 0 4px; }
+.practice-topic:focus { outline: none; border-color: var(--accent); }
+.practice-count { margin-top: 12px; }
+.chip.weak { border-color: var(--red); color: var(--red); }
+.chip svg { width: 15px; height: 15px; vertical-align: -3px; margin-right: 2px; }
+
+/* ---- library: streak, today, topics */
+.lib-stats { display: grid; grid-template-columns: auto auto 1fr; gap: 12px; margin: 0 0 4px; }
+.stat { display: flex; align-items: center; gap: 12px; padding: 14px 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; min-width: 0; }
+.stat b { font-size: 22px; font-weight: 700; color: var(--text); margin-right: 4px; }
+.stat small { display: block; font-size: 12.5px; color: var(--text-2); margin-top: 1px; }
+.stat-icon { display: grid; place-items: center; width: 38px; height: 38px; flex: none; border-radius: 10px; background: var(--line-soft); color: var(--text-2); }
+.stat-icon.hot { background: var(--amber-soft); color: #e07b00; }
+[data-theme='dark'] .stat-icon.hot { color: #f6a940; }
+.stat.topics { flex-direction: column; align-items: stretch; gap: 10px; }
+.stat-head { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+.stat-head .stat-icon { width: 30px; height: 30px; border-radius: 8px; }
+.topic-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.topic-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 4px 12px; font-size: 13.5px; color: var(--text); }
+.topic-chip:hover { border-color: var(--accent); color: var(--accent); }
+.topic-chip em { font-style: normal; font-weight: 700; font-size: 12.5px; color: var(--ok); }
+.topic-chip.weak { border-color: var(--red); background: var(--red-soft); }
+.topic-chip.weak em { color: var(--red); }
+.nb-topics { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 1px; }
+.nb-topic { font-size: 11.5px; line-height: 1; padding: 4px 7px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+@media (max-width: 760px) {
+  .lib-stats { grid-template-columns: 1fr 1fr; }
+  .stat.topics { grid-column: 1 / -1; }
+  .stat { padding: 12px 14px; gap: 10px; }
+  .stat b { font-size: 19px; }
+}
+
+/* ---- first run */
+.dialog.first-run { width: min(760px, calc(100vw - 32px)); padding: 24px 26px 20px; }
+.fr-head { text-align: center; margin-bottom: 16px; }
+.fr-head .brand-logo { height: 34px; }
+.fr-head h2 { margin: 10px 0 4px; font-size: 24px; }
+.fr-head p { margin: 0; }
+.fr-grid { list-style: none; padding: 0; margin: 0 0 18px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.fr-card { display: flex; flex-direction: column; gap: 4px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); font-size: 13.5px; line-height: 1.4; }
+.fr-card b { font-size: 14.5px; color: var(--text); }
+.fr-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); margin-bottom: 4px; }
+.fr-example { align-self: flex-start; margin-top: 4px; font-size: 13px; }
+@media (max-width: 640px) {
+  .fr-grid { grid-template-columns: 1fr 1fr; }
+  .dialog.first-run { padding: 18px 16px; }
+  .fr-head h2 { font-size: 20px; }
+}
+@media (max-width: 400px) {
+  .fr-grid { grid-template-columns: 1fr; }
+}
+
+/* ================================================================ Notebooks home (redesign) */
+
+/* ---- user menu */
+.user-btn { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 10px 0 4px; border: 1px solid transparent; border-radius: 999px; background: none; color: var(--text); }
+.user-btn:hover, .user-btn[aria-expanded='true'] { border-color: var(--line); background: var(--surface); }
+.avatar { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--surface); font-size: 13px; font-weight: 700; letter-spacing: 0.02em; flex: none; }
+.avatar.lg { width: 40px; height: 40px; font-size: 15px; }
+.user-name { font-size: 14.5px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.popover.menu.user-pop { left: auto; right: 0; top: 46px; min-width: 260px; z-index: 30; }
+.user-pop-head { display: flex; align-items: center; gap: 10px; padding: 4px 6px 8px; }
+.user-pop-head b { display: block; font-size: 15px; }
+.user-pop-head small { color: var(--text-2); font-size: 12.5px; }
+.user-pop hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
+.menu-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 13.5px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 2px; gap: 2px; }
+.seg button { display: grid; place-items: center; width: 32px; height: 28px; border: 0; border-radius: 999px; background: none; color: var(--text-2); }
+.seg button svg { width: 17px; height: 17px; }
+.seg button.on { background: var(--accent-soft); color: var(--accent); }
+
+/* ---- continue card: sheet | details | progress side panel */
+.lib-continue { grid-template-columns: 230px minmax(0, 1fr) 250px; gap: 36px; }
+.lc-side { display: flex; flex-direction: column; gap: 10px; align-self: stretch; justify-content: center; }
+.side-box { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); text-align: left; color: var(--text); }
+.side-box small { font-size: 13px; color: var(--text-2); }
+.side-box small b { color: var(--text); }
+.side-box.topic { cursor: pointer; align-items: center; text-align: center; }
+.side-box.topic b { font-size: 20px; line-height: 1.2; }
+.side-box.topic:hover { border-color: var(--accent); }
+.side-link { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; color: var(--accent); font-weight: 600; }
+.side-link svg { width: 15px; height: 15px; }
+.bar { display: block; height: 8px; border-radius: 999px; background: var(--line-soft); overflow: hidden; }
+.bar i { display: block; height: 100%; border-radius: 999px; background: var(--accent); transition: width 300ms ease; }
+.side-box.streak { flex-direction: row; align-items: center; justify-content: center; gap: 8px; }
+.side-box.streak svg { color: var(--text-2); }
+.side-box.streak.hot svg { color: #e07b00; }
+[data-theme='dark'] .side-box.streak.hot svg { color: #f6a940; }
+.side-weak small { display: block; font-size: 12.5px; color: var(--text-2); margin: 2px 0 6px; }
+
+/* ---- all notebooks: search, sort, add buttons, covers */
+.lib-head { align-items: center; flex-wrap: wrap; }
+.lib-search { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; width: min(320px, 100%); border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--text-2); }
+.lib-search:focus-within { border-color: var(--accent); }
+.lib-search svg { width: 17px; height: 17px; flex: none; }
+.lib-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; font-size: 14px; color: var(--text); }
+.lib-sort { display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 4px 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 14px; color: var(--text-2); }
+.lib-sort select { border: 0; background: none; font: inherit; color: var(--text); padding: 6px 4px; cursor: pointer; }
+.lib-sort select option { background: var(--surface); color: var(--text); }
+.lib-adds { display: flex; flex-wrap: wrap; gap: 10px; margin: -4px 0 20px; }
+.lib-adds .btn { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; }
+.lib-adds .btn svg { width: 18px; height: 18px; }
+.lib-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.nb-cover { position: relative; display: block; padding: 12px 12px 12px 26px; border-radius: 10px; background: var(--cover); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 8px 22px rgba(20, 25, 30, 0.12); margin-bottom: 10px; transition: transform 140ms ease, box-shadow 140ms ease; }
+.nb-cover::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 16px; border-radius: 10px 0 0 10px; background: var(--spine); }
+.nb-open:hover .nb-cover { transform: translateY(-4px); box-shadow: 0 0 0 2px var(--accent), 0 12px 26px rgba(20, 25, 30, 0.18); }
+.nb-cover .nb-paper { margin: 0; transform: none !important; }
+.nb-cover .doc-thumb { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18); }
+.nb-open:hover .nb-cover .doc-thumb { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18); }
+
+/* ---- try this */
+.try-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.try-card { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); text-align: left; color: var(--text); transition: border-color 120ms ease, transform 120ms ease; }
+.try-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.try-card b { display: block; font-size: 15.5px; }
+.try-card small { font-size: 13px; color: var(--text-2); }
+.try-icon { display: grid; place-items: center; width: 40px; height: 40px; flex: none; border-radius: 10px; background: var(--accent-soft); color: var(--accent); }
+
+@media (max-width: 1100px) {
+  .lib-continue { grid-template-columns: 200px minmax(0, 1fr); }
+  .lc-side { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; }
+  .lc-side > * { flex: 1 1 180px; }
+}
+@media (max-width: 700px) {
+  .lib-continue { grid-template-columns: 1fr; }
+  .lc-side { flex-direction: column; }
+  .lc-side > * { flex: none; }
+  .lib-head .spacer { display: none; }
+  .lib-search { width: 100%; flex: 1 1 100%; order: 3; }
+  .lib-sort { order: 4; }
+  .lib-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 14px; }
+  .try-grid { grid-template-columns: 1fr 1fr; }
+}
+/* notebook cards: square page previews */
+.nb-cover .doc-thumb { aspect-ratio: 1 / 1; }
+
+/* ---- Ask NOVA: the words you speak are written into the box as they are heard */
+.ask-row textarea.hearing { border-color: var(--red); box-shadow: 0 0 0 3px var(--red-soft); color: var(--text); cursor: default; }
+
+/* ---- continue card: crisp. Squared-paper grid, no tilt, no soft shadows (in dark mode the inverted
+   preview turned its shadow into a blurry glow). The preview is the top sheet of a small stack of pages. */
+.lib-continue { box-shadow: none; padding: 32px 36px 36px 40px; } /* keeps its squared-paper grid */
+.lc-sheet { position: relative; transform: none; border: 1.5px solid var(--rule-2); border-radius: 10px; background: var(--surface); transition: transform 140ms ease; }
+.lc-sheet:hover { transform: translate(-2px, -2px); }
+.lc-sheet::before, .lc-sheet::after { content: ''; position: absolute; inset: 0; border: 1.5px solid var(--rule-2); border-radius: 10px; background: var(--surface); z-index: -1; }
+.lc-sheet::before { transform: translate(7px, 7px); }
+.lc-sheet::after { transform: translate(14px, 14px); z-index: -2; }
+.lc-sheet { isolation: isolate; }
+.lc-sheet .doc-thumb { box-shadow: none; border-radius: 8px; }
+.lc-sheet:focus-visible { outline-offset: 4px; }
+/* previews carry no shadow of their own in dark mode: the filter that darkens them would turn it into a glow */
+[data-theme='dark'] .doc-thumb, [data-theme='dark'] .nb-open:hover .doc-thumb { box-shadow: none !important; }
+
+/* ---- continue card background: the notebook page itself (same paper colour, same 24 / 120 squared grid) */
+:root { --page-bg: #ffffff; --grid-minor: #e8ecf0; --grid-major: #dce2e8; }
+:root[data-theme='dark'] { --page-bg: #1a1a1a; --grid-minor: #26292c; --grid-major: #2f3439; } /* what the page's filter makes of them */
+.lib-continue {
+  background-color: var(--page-bg);
+  background-image:
+    linear-gradient(var(--grid-major) 1px, transparent 1px), linear-gradient(90deg, var(--grid-major) 1px, transparent 1px),
+    linear-gradient(var(--grid-minor) 1px, transparent 1px), linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px);
+  background-size: 120px 120px, 120px 120px, 24px 24px, 24px 24px;
+  background-position: -1px -1px;
+}
+
+/* ================================================================ Notebooks home, v3
+   The whole screen is the notebook's squared paper. On it: a "continue" card with the real page, a shelf of
+   coloured covers, and a floating bar of things to try. */
+.library.home { background-color: var(--page-bg); }
+.library.home .library-main {
+  gap: 30px; padding-bottom: 96px;
+  background-image:
+    linear-gradient(var(--grid-major) 1px, transparent 1px), linear-gradient(90deg, var(--grid-major) 1px, transparent 1px),
+    linear-gradient(var(--grid-minor) 1px, transparent 1px), linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px);
+  background-size: 120px 120px, 120px 120px, 24px 24px, 24px 24px;
+  background-attachment: local;
+}
+.library.home .library-main > * { max-width: 1180px; }
+.library.home .library-foot { background: var(--page-bg); }
+
+/* ---- continue card */
+.hero { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 36px; align-items: center; padding: 26px 32px; border: 1px solid var(--hero-line); border-radius: 16px; background: var(--hero-bg); }
+:root { --hero-bg: linear-gradient(120deg, #f4f8fd 0%, #e6eef9 60%, #dfe9f6 100%); --hero-line: #cddbee; }
+:root[data-theme='dark'] { --hero-bg: linear-gradient(120deg, #1b2330 0%, #1c2a3d 55%, #22303f 100%); --hero-line: #2c3a4e; }
+.hero-sheet { border: 0; padding: 0; background: none; border-radius: 6px; transition: transform 140ms ease; }
+.hero-sheet:hover { transform: translateY(-3px); }
+/* the real page, on white paper in both themes (it is a sheet of paper lying on the card) */
+.hero-sheet .doc-thumb { aspect-ratio: 3 / 4; border-radius: 6px; filter: none !important; box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25), 0 10px 24px rgba(0, 0, 0, 0.22) !important; }
+.hero-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.hero-title { margin: 0; font-size: 30px; font-weight: 700; line-height: 1.15; color: var(--text); }
+.hero-meta { font-size: 14.5px; color: var(--text-2); }
+.hero-lines { list-style: none; margin: 6px 0 2px; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.hero-lines li { font-family: var(--mono); font-size: 16px; color: var(--text); border-left: 3px solid var(--accent); padding: 1px 0 1px 12px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hero-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.hero-chips span { font-size: 13px; color: var(--text-2); border: 1px solid var(--hero-line); border-radius: 999px; padding: 2px 10px; }
+.hero-chips b { color: var(--text); }
+.hero-chips .ok b { color: var(--ok); }
+.hero-chips .bad b { color: var(--bad); }
+.hero-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 14px 18px; margin-top: 10px; }
+.hero-streak { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 15.5px; color: var(--text-2); }
+.hero-streak.hot { color: var(--ok); }
+.hero-stat { display: flex; flex-direction: column; gap: 1px; padding: 0 0 0 16px; border: 0; border-left: 1px solid var(--hero-line); background: none; text-align: left; color: var(--text); }
+.hero-stat small { font-size: 12.5px; color: var(--text-2); }
+.hero-stat b { font-size: 15px; }
+button.hero-stat:hover b { color: var(--accent); }
+
+/* ---- shelf header */
+.shelf-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+.shelf-head h2 { margin: 0; font-size: 21px; font-weight: 700; }
+.shelf-head .muted { font-size: 15px; margin-right: 6px; }
+.shelf-head .btn { display: inline-flex; align-items: center; gap: 7px; }
+.shelf-head .btn svg { width: 18px; height: 18px; }
+.shelf-head .lib-search { width: 240px; border-radius: 999px; }
+.weak-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -4px 0 16px; font-size: 13.5px; }
+
+/* ---- covers */
+.cover-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 22px; }
+.cover-card { position: relative; --cover-bg: color-mix(in srgb, var(--cover) 16%, var(--surface)); border-radius: 12px; background: var(--cover-bg); border: 1px solid color-mix(in srgb, var(--cover) 45%, transparent); border-top: 3px solid var(--cover); transition: transform 140ms ease, border-color 140ms ease; }
+.cover-card:hover { transform: translateY(-4px); border-color: var(--cover); }
+.cover-open { display: flex; flex-direction: column; width: 100%; border: 0; padding: 0; background: none; text-align: left; color: var(--text); border-radius: 12px; }
+.cover-art { display: grid; place-items: center; height: 132px; color: var(--cover); }
+.cover-art svg { width: 76px; height: 76px; }
+.cover-info { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px 13px; border-radius: 0 0 11px 11px; background: color-mix(in srgb, var(--cover) 9%, var(--surface)); }
+.cover-title { font-weight: 700; font-size: 15.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cover-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12.5px; color: var(--text-2); }
+.cover-badge { font-size: 11px; font-weight: 700; line-height: 1; padding: 3px 6px; border-radius: 5px; }
+.cover-badge.good { color: var(--ok); background: var(--ok-soft); }
+.cover-badge.mid { color: var(--bad); background: var(--bad-soft); }
+.cover-badge.draft { color: var(--warn); background: var(--amber-soft); }
+.cover-card .nb-del { top: 8px; right: 8px; }
+
+/* ---- the floating "try this" bar */
+.try-dock { position: absolute; left: 50%; bottom: 46px; transform: translateX(-50%); z-index: 5; display: flex; gap: 6px; max-width: calc(100% - 24px); padding: 6px; overflow-x: auto; scrollbar-width: none; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); box-shadow: var(--shadow-2); }
+.try-dock::-webkit-scrollbar { display: none; }
+.try-dock button { display: inline-flex; align-items: center; gap: 8px; flex: none; height: 40px; padding: 0 16px; border: 1px solid var(--line); border-radius: 999px; background: var(--line-soft); color: var(--text); font-size: 14.5px; white-space: nowrap; }
+.try-dock button:hover { border-color: var(--accent); color: var(--accent); }
+.try-dock button svg { width: 19px; height: 19px; }
+.library.home { position: relative; }
+
+@media (max-width: 760px) {
+  .hero { grid-template-columns: 1fr; padding: 18px; gap: 18px; }
+  .hero-sheet { max-width: 150px; }
+  .hero-title { font-size: 24px; }
+  .hero-foot .spacer { display: none; }
+  .hero-stat:first-of-type { border-left: 0; padding-left: 0; }
+  .shelf-head .spacer { display: none; }
+  .shelf-head .lib-search { flex: 1 1 160px; width: auto; order: 5; }
+  .shelf-head .lib-sort { order: 6; }
+  .cover-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .cover-art { height: 104px; }
+  .cover-art svg { width: 60px; height: 60px; }
+  .cover-card .nb-del { opacity: 1; }
+  .try-dock { bottom: 40px; border-radius: 16px; }
+}
