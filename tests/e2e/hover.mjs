@@ -14,5 +14,5 @@ export default async function run(page) {
   await page.waitForTimeout(300)
   const over = await page.evaluate(() => document.querySelectorAll('.readback').length)
   await page.waitForTimeout(4500)
-  return { away, over, statusLeft: await page.evaluate(() => document.querySelectorAll('.nova-status').length) }
+  return { away, over, statusLeft: await page.evaluate(() => document.querySelectorAll('[data-testid=nova-status]').length) }
 }

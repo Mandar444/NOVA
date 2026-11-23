@@ -2,7 +2,7 @@ export default async function run(page) {
   const { drawText } = await import('./glyphs.mjs')
   await page.setViewportSize({ width: 1440, height: 920 })
   await page.waitForSelector('[data-testid=workspace]', { timeout: 20000 })
-  const assist = page.locator('.assist-toggle')
+  const assist = page.locator('[data-testid=assist-toggle]')
   await assist.click()
   const c = page.getByRole('button', { name: 'Turn on Assist', exact: true })
   if (await c.count()) await c.click()

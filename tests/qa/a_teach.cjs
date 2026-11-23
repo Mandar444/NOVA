@@ -76,7 +76,7 @@ const PDF = path.join(__dirname, '..', 'real4.pdf')
   const helpQ3 = async () => {
     const row = page.locator('.q-row', { hasText: /eleventh/i }).first()
     if (await page.locator('.ask-panel').count()) await page.locator('.ask-panel button[aria-label*="Close" i]').first().click().catch(() => {})
-    await row.locator('button', { hasText: 'Help' }).click()
+    await row.locator('button', { hasText: /^(Help|Hint)$/ }).click()
   }
   if (q3?.bounds) await exchange('A1 imported question, no working (Help on Q' + q3.number + ')', '(Help button)', { help: helpQ3 })
 
@@ -97,7 +97,7 @@ const PDF = path.join(__dirname, '..', 'real4.pdf')
       const helpQ1 = async () => {
         if (await page.locator('.ask-panel').count()) await page.keyboard.press('Escape')
         const rows = page.locator('.q-row'); const n = await rows.count()
-        for (let k = 0; k < n; k++) { const row = rows.nth(k); if (!/eleventh/i.test(await row.innerText())) { await row.locator('button', { hasText: 'Help' }).click(); return } }
+        for (let k = 0; k < n; k++) { const row = rows.nth(k); if (!/eleventh/i.test(await row.innerText())) { await row.locator('button', { hasText: /^(Help|Hint)$/ }).click(); return } }
       }
       await exchange('A8 imported: switched to another printed question (Help)', '(Help button on another question)', { help: helpQ1 })
     } else ex.push({ case: 'A2 imported (skipped: question off screen)', y })

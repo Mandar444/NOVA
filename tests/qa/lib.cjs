@@ -61,6 +61,9 @@ async function open(browser, { cpu = 1, viewport = { width: 1440, height: 900 },
     await page.keyboard.press('Enter')
     await page.waitForTimeout(2500)
   }
+  // first-run tour (shown once per profile): close it so tests start on the page
+  const tour = page.getByRole('button', { name: /start writing/i }).first()
+  if (await tour.count()) { await tour.click().catch(() => {}); await page.waitForTimeout(400) }
   return { ctx, page, log, t0 }
 }
 
@@ -73,7 +76,7 @@ async function newNotebook(page) {
 }
 
 async function assist(page, on = true) {
-  const t = page.locator('.assist-toggle').first()
+  const t = page.locator('[data-testid=assist-toggle]').first()
   const isOn = (await t.getAttribute('aria-pressed')) === 'true'
   if (isOn !== on) {
     await t.click()

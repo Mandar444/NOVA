@@ -6,7 +6,7 @@ export default async function run(page) {
   await page.getByRole('button', { name: 'Notebooks' }).click()
   await page.getByRole('button', { name: /New notebook/ }).click()
   await page.waitForSelector('[data-testid=workspace]')
-  const assist = page.locator('.assist-toggle')
+  const assist = page.locator('[data-testid=assist-toggle]')
   if (!(await assist.getAttribute('class')).includes('on')) {
     await assist.click()
     const c = page.getByRole('button', { name: 'Turn on Assist', exact: true })

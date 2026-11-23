@@ -191,6 +191,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
 
   // true while the view is NOVA's own fit (the student hasn't panned or zoomed since): then a width change refits
   const autoFit = useRef(false)
+  const rootRef = useRef<HTMLDivElement>(null) // .writing while the pen is down (a class, not state: nothing re-renders on the pen path)
   const fitWidth = useCallback(() => {
     if (!size.w) return
     autoFit.current = true
@@ -639,6 +640,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
 
   return (
     <div
+      ref={rootRef}
       className={`notebook ${phone ? 'phone' : desktop ? 'desktop' : 'tablet'} ${focus ? 'focus' : ''} ${!focus && !phone && (ask || (testOpen && activeTest)) ? 'side-open' : ''}`}
       onPointerDown={() => menu && setMenu(null)}
       onPointerMove={(e) => {
@@ -715,7 +717,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
             <button className="ob-ask" onPointerDown={(e) => e.stopPropagation()} onClick={() => openAsk(false)}><Icon.ask /> Ask</button>
           ) : (
             <div className="ob-capsule ob-right" onPointerDown={(e) => e.stopPropagation()}>
-              <button className={`ob-seg ${settings.assist ? 'on' : ''}`} onClick={toggleAssist} aria-pressed={settings.assist} title="Read your writing automatically after a pause">
+              <button data-testid="assist-toggle" className={`ob-seg ${settings.assist ? 'on' : ''}`} onClick={toggleAssist} aria-pressed={settings.assist} title="Read your writing automatically after a pause">
                 <Icon.read /> Assist
               </button>
               {testsList.length > 0 && (
@@ -775,11 +777,13 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
           onSelect={onSelect}
           onPenDown={() => {
             penActive.current = true
+            rootRef.current?.classList.add('writing')
             nova.scheduler.penDown()
             setMenu(null)
           }}
           onPenUp={() => {
             penActive.current = false
+            rootRef.current?.classList.remove('writing')
           }}
           onPenDetected={() => {
             if (settings.stylusOnly || stylusOffered.current) return

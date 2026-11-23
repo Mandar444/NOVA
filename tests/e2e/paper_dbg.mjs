@@ -10,6 +10,6 @@ export default async function run(page) {
     logs,
     toasts: await page.evaluate(() => [...document.querySelectorAll('.toast')].map((t) => t.textContent)),
     panel: await page.evaluate(() => document.querySelector('.test-panel')?.textContent?.slice(0, 400) ?? null),
-    pages: await page.evaluate(() => document.querySelector('.page-count')?.textContent),
+    pages: await page.evaluate(() => document.querySelector('.ob-chip-btn, .ob-title-btn')?.textContent),
   }
 }

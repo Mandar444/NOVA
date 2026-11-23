@@ -575,6 +575,13 @@ button:disabled { opacity: 0.35; }
   .dialog { border-radius: 28px 28px 0 0; width: 100% !important; max-width: none !important; max-height: 88vh; overflow-y: auto; padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
 }
 
+/* NOVA's cards never swallow the pen: a stroke that starts on one draws on the page; only the card's buttons are
+   tappable, and every card fades while the pen is down so the ink under it stays visible */
+.tutor-card { pointer-events: none; transition: opacity 120ms var(--nv-ease); }
+.tutor-card button, .tutor-card summary, .tutor-card a, .tutor-card details { pointer-events: auto; }
+.notebook.writing .tutor-card { opacity: 0.22; }
+.notebook.writing .tutor-card button { pointer-events: none; }
+
 /* dark mode shows the page inverted (theme-dark.css), so ink swatches show the colour the student will actually see */
 :root[data-theme='dark'] .ob-ink, :root[data-theme='dark'] .swatch, :root[data-theme='dark'] .width-btn span { filter: invert(1) hue-rotate(180deg); }
 

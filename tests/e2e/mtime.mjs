@@ -4,7 +4,7 @@ export default async function run(page) {
   await page.reload()
   await page.waitForSelector('[data-testid=workspace]', { timeout: 20000 })
   // Assist lives in the More menu on phones
-  await page.locator('.topbar .assist-toggle').click()
+  await page.locator('[data-testid=assist-toggle]').click()
   const c = page.getByRole('button', { name: 'Turn on Assist', exact: true })
   if (await c.count()) await c.click()
   const ws = await page.locator('[data-testid=workspace]').boundingBox()

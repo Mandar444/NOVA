@@ -38,7 +38,7 @@ export function StatusPill({ status, onStop, onDismiss, onIdleClick, compact }: 
   if (status.state === 'idle') {
     if (compact) return null
     return (
-      <button className="ob-pill idle" onClick={onIdleClick} aria-label="NOVA ready. Show NOVA history">
+      <button data-testid="nova-status" className="ob-pill idle" onClick={onIdleClick} aria-label="NOVA ready. Show NOVA history">
         <span className="ob-dot ok" aria-hidden="true" />
         NOVA ready
       </button>
@@ -46,7 +46,7 @@ export function StatusPill({ status, onStop, onDismiss, onIdleClick, compact }: 
   }
   if (working) {
     return (
-      <div className={`ob-pill working ${compact ? 'compact' : ''}`} role="status" aria-live="polite">
+      <div data-testid="nova-status" className={`ob-pill working ${compact ? 'compact' : ''}`} role="status" aria-live="polite">
         <span className="ob-pill-mark" aria-hidden="true"><Icon.ask /></span>
         <span className="ob-pill-body">
           <span className="ob-pill-text">{status.message || 'Working…'}</span>
@@ -59,7 +59,7 @@ export function StatusPill({ status, onStop, onDismiss, onIdleClick, compact }: 
   }
   const text = status.state === 'error' ? plainMessage(status.message) : status.message
   return (
-    <div className={`ob-pill ${status.state} ${compact ? 'compact' : ''}`} role="status" aria-live="polite">
+    <div data-testid="nova-status" className={`ob-pill ${status.state} ${compact ? 'compact' : ''}`} role="status" aria-live="polite">
       <span className={`ob-dot ${status.state === 'error' ? 'bad' : 'warn'}`} aria-hidden="true" />
       <span className="ob-pill-text">{text}</span>
       {status.retry && <button className="ob-pill-action" onClick={status.retry}>Retry</button>}

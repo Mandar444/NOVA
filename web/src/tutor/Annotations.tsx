@@ -189,7 +189,6 @@ export function TutorLayer({ page, regionBounds, speechEnabled, onDismiss, onPla
             key={t.id}
             className={`tutor-card ${a.type} ${stale ? 'stale' : ''}`}
             style={{ left: t.layout.x, top: t.layout.y, width: t.layout.w }}
-            onPointerDown={stop}
             data-testid="tutor-card"
           >
             <div className="tutor-head">

@@ -12,7 +12,7 @@ export default async function run(page) {
   const pen = () => page.getByRole('button', { name: 'Pen', exact: true }).first().click()
   const selectTool = () => page.getByRole('button', { name: 'Select', exact: true }).first().click()
   const settle = async () => {
-    await page.waitForFunction(() => !document.querySelector('.readback.pending') && !document.querySelector('.nova-status.working'), null, { timeout: 120000 }).catch(() => {})
+    await page.waitForFunction(() => !document.querySelector('.readback.pending') && !document.querySelector('.ob-pill.working'), null, { timeout: 120000 }).catch(() => {})
     await page.waitForTimeout(400)
   }
   const selectLine = async (x, y) => {
@@ -24,7 +24,7 @@ export default async function run(page) {
   const menu = (name) => page.locator('.region-menu').getByRole('button', { name, exact: true }).click()
   const state = () => page.evaluate(() => ({
     readbacks: [...document.querySelectorAll('.readback')].map((e) => e.textContent),
-    status: document.querySelector('.nova-status')?.textContent ?? null,
+    status: document.querySelector('[data-testid=nova-status]')?.textContent ?? null,
     cards: [...document.querySelectorAll('[data-testid=tutor-card]')].map((c) => c.textContent.slice(0, 200)),
     highlights: document.querySelectorAll('rect.hl.active').length,
     problemTags: document.querySelectorAll('.problem-tag').length,

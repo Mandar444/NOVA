@@ -240,7 +240,7 @@ export function AskPanel({ docked, startWithMic, initialText, turns, status, abo
           <div className="bubble tutor thinking" aria-label="NOVA is answering">
             <span className="skel" /><span className="skel" /><span className="skel short" />
             <span className="thinking-note">{status.message || 'Working…'} Keep writing, the answer appears beside your work.</span>
-            {onStop && <button className="ask-stop" onClick={onStop}><Icon.stop /> Stop</button>}
+            {onStop && <button className="ask-stop" aria-label="Stop NOVA" onClick={onStop}><Icon.stop /> Stop</button>}
           </div>
         )}
         {status.state === 'error' && (

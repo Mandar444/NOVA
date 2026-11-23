@@ -4,7 +4,7 @@ export default async function run(page) {
   await page.setViewportSize({ width: 1400, height: 900 })
   await page.waitForSelector('[data-testid=workspace]', { timeout: 20000 })
   await page.evaluate(() => { try { const k = Object.keys(localStorage).find((x) => /settings/i.test(x)); if (k) { const v = JSON.parse(localStorage.getItem(k)); v.autoAnswer = false; localStorage.setItem(k, JSON.stringify(v)) } } catch {} })
-  await page.locator('.assist-toggle').click()
+  await page.locator('[data-testid=assist-toggle]').click()
   const c = page.getByRole('button', { name: 'Turn on Assist', exact: true })
   if (await c.count()) await c.click()
   const ws = await page.locator('[data-testid=workspace]').boundingBox()
