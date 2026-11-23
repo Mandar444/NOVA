@@ -254,6 +254,76 @@ button:disabled { opacity: 0.35; }
 .phone .toasts { bottom: calc(100px + env(safe-area-inset-bottom)); }
 .busy-banner { background: var(--nv-invert); color: var(--nv-on-invert); border-radius: 999px; box-shadow: var(--nv-shadow-float); font: 600 14px var(--nv-sans); }
 
+
+/* ==== readback: a quiet chip under the line, a help card on tap ========== */
+.readback-anchor { z-index: 4; }
+.readback-anchor.open { z-index: 8; }
+.readback {
+  display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 34px; padding: 4px 10px; border-radius: 10px;
+  font: 500 14px var(--nv-sans); color: var(--nv-text-2); background: var(--nv-glass);
+  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); border: 1px solid var(--nv-hair); box-shadow: var(--nv-shadow-1);
+}
+.readback.pending { border-style: solid; }
+.readback.pending::before { border-color: var(--nv-line); border-top-color: var(--nv-accent); }
+.readback.failed { color: var(--nv-danger); border-color: var(--nv-hair); }
+.readback.unclear { background: var(--nv-surface); color: var(--nv-text); border-color: var(--nv-warn); padding: 6px 8px 6px 12px; font-weight: 600; }
+.readback.unclear .chip { height: 32px; font-family: var(--nv-sans); font-variant-numeric: tabular-nums; }
+.readback.edit { background: var(--nv-surface); padding: 6px; gap: 6px; }
+.readback.edit input { height: 36px; border-radius: 10px; border: 1px solid var(--nv-line); background: var(--nv-surface-2); color: var(--nv-text); font: 500 15px var(--nv-sans); padding: 0 10px; width: 240px; }
+.readback.edit .btn { height: 36px; border-radius: 10px; padding: 0 12px; font-size: 14px; }
+.rb-text { font: 500 14px var(--nv-sans); font-variant-numeric: tabular-nums; color: inherit; }
+
+.rb-chip {
+  display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 8px 0 10px; border-radius: 10px;
+  background: var(--nv-glass); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  border: 1px solid var(--nv-hair); box-shadow: var(--nv-shadow-1); color: var(--nv-text-2); font: 500 14px var(--nv-sans);
+}
+.rb-chip > svg:first-child { width: 14px; height: 14px; color: var(--nv-accent); }
+.rb-chip:hover { color: var(--nv-text); }
+.rb-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--nv-text-3); }
+.rb-dot.correct, .rb-dot.solved { background: var(--nv-ok); }
+.rb-dot.incorrect, .rb-dot.different { background: var(--nv-danger); }
+.rb-dot.equivalent { background: var(--nv-accent); }
+
+.rb-card {
+  width: 340px; padding: 10px; border-radius: 18px; background: var(--nv-surface); color: var(--nv-text);
+  border: 1px solid var(--nv-hair); box-shadow: var(--nv-shadow-float); display: flex; flex-direction: column; gap: 10px;
+  animation: ob-in 160ms var(--nv-ease);
+}
+.rb-head { display: flex; align-items: center; gap: 8px; padding: 2px 2px 0 6px; }
+.rb-label { font: 500 13px var(--nv-sans); color: var(--nv-text-2); }
+.rb-head .rb-text { font-weight: 700; font-size: 15px; }
+.rb-edit { height: 32px; padding: 0 10px; border-radius: 10px; border: 0; background: var(--nv-fill); color: var(--nv-text); font: 600 13px var(--nv-sans); }
+.rb-close { width: 32px; height: 32px; border-radius: 10px; border: 0; background: transparent; color: var(--nv-text-2); display: inline-flex; align-items: center; justify-content: center; }
+.rb-close svg { width: 16px; height: 16px; }
+.rb-check { margin: 0 6px; font: 600 13px var(--nv-sans); color: var(--nv-text-2); }
+.rb-check.correct, .rb-check.solved { color: var(--nv-ok); }
+.rb-check.incorrect, .rb-check.different { color: var(--nv-danger); }
+.rb-help { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.rb-opt {
+  min-height: 60px; border-radius: 14px; border: 0; background: var(--nv-fill); color: var(--nv-text);
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; padding: 8px 10px; text-align: left;
+}
+.rb-opt b { font: 700 14px var(--nv-sans); }
+.rb-opt span { font: 500 12.5px var(--nv-sans); color: var(--nv-text-2); }
+.rb-opt:hover { background: var(--nv-fill-2); }
+.rb-opt:first-child { background: var(--nv-accent-soft); }
+.rb-opt:first-child b { color: var(--nv-accent-ink); }
+.rb-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px 2px; }
+.rb-link { height: 36px; padding: 0 6px; border: 0; background: none; color: var(--nv-accent-ink); font: 600 14px var(--nv-sans); display: inline-flex; align-items: center; gap: 6px; }
+.rb-link:last-child { margin-left: auto; }
+.rb-link svg { width: 16px; height: 16px; }
+
+/* selection and the line menu */
+.region-box.selected { border-color: var(--nv-accent); border-style: solid; border-width: 1.5px; background: color-mix(in srgb, var(--nv-accent) 5%, transparent); }
+.problem-tag { font: 600 12px var(--nv-sans); font-style: normal; letter-spacing: 0.04em; text-transform: uppercase; color: var(--nv-accent-ink); }
+.region-menu {
+  background: var(--nv-glass); -webkit-backdrop-filter: blur(20px) saturate(1.6); backdrop-filter: blur(20px) saturate(1.6);
+  border: 1px solid var(--nv-hair); border-radius: 16px; box-shadow: var(--nv-shadow-float); padding: 4px; gap: 2px;
+}
+.menu-btn { height: 40px; padding: 0 12px; border-radius: 12px; font: 600 14px var(--nv-sans); color: var(--nv-text); }
+.menu-btn:hover { background: var(--nv-fill); color: var(--nv-text); }
+
 /* dark mode shows the page inverted (theme-dark.css), so ink swatches show the colour the student will actually see */
 :root[data-theme='dark'] .ob-ink, :root[data-theme='dark'] .swatch, :root[data-theme='dark'] .width-btn span { filter: invert(1) hue-rotate(180deg); }
 

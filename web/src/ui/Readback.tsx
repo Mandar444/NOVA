@@ -27,7 +27,7 @@ interface Props {
   onAccept: (regionId: string, text: string) => void
   onRetry: (regionId: string) => void
   onSelect: (regionId: string) => void
-  onQuick: (regionId: string, intent: 'plot' | 'solve' | 'ask') => void
+  onQuick: (regionId: string, intent: 'plot' | 'solve' | 'ask' | 'hint' | 'explain') => void
 }
 
 function screenRect(view: View, r: Region['bounds']) {
@@ -36,6 +36,7 @@ function screenRect(view: View, r: Region['bounds']) {
 
 export function ReadbackLayer({ page, view, phases, selectedRegionId, hoveredRegionId, onAccept, onRetry, onSelect, onQuick }: Props) {
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
+  const [open, setOpen] = useState<string | null>(null) // the line whose help card is open
   const stop = (e: React.PointerEvent) => e.stopPropagation()
   const canHover = typeof window !== 'undefined' && window.matchMedia?.('(hover: hover)').matches
   const lastStroke = page.strokes[page.strokes.length - 1]
@@ -51,7 +52,7 @@ export function ReadbackLayer({ page, view, phases, selectedRegionId, hoveredReg
         const isProblem = page.problemRegionId === region.id
         const selected = selectedRegionId === region.id
         const top = s.y + s.h + 4
-        const reveal = selected || hoveredRegionId === region.id || editing?.id === region.id || (!canHover && latestRegion === region.id && !answered(region.id))
+        const reveal = selected || open === region.id || hoveredRegionId === region.id || editing?.id === region.id || (!canHover && latestRegion === region.id && !answered(region.id))
         const needsYou = reading?.state === 'needs_clarification' || phase?.phase === 'failed'
         if (!reveal && !needsYou) return null // quiet page: details appear when you point at a line
         // dots/specks and big drawings with no maths get no label at all
@@ -89,18 +90,37 @@ export function ReadbackLayer({ page, view, phases, selectedRegionId, hoveredReg
             )
           if (reading.state === 'accepted') {
             const c = reading.check
+            const t = reading.acceptedText ?? ''
+            const go = (intent: 'plot' | 'solve' | 'ask' | 'hint' | 'explain') => { setOpen(null); onQuick(region.id, intent) }
+            if (open !== region.id) {
+              return (
+                <button className="rb-chip" aria-expanded="false" aria-label={`NOVA read ${t}${c ? `, ${CHECK_LABEL[c.status]}` : ''}. Show help options`} onClick={() => setOpen(region.id)}>
+                  <Icon.ask />
+                  <span className="rb-text">{t}</span>
+                  {c && <span className={`rb-dot ${c.status}`} aria-hidden="true" />}
+                  <Icon.chevron />
+                </button>
+              )
+            }
             return (
-              <div className="readback accepted" title={reading.rawText !== reading.acceptedText ? `NOVA first read: ${reading.rawText}` : undefined}>
-                <span className="rb-text">{reading.acceptedText}</span>
-                {c && <span className={`check-tag ${c.status}`}>{CHECK_LABEL[c.status]}</span>}
-                {/[yY]/.test(reading.acceptedText ?? '') && /[xXθ]/.test(reading.acceptedText ?? '') && (
-                  <button className="rb-action" onClick={() => onQuick(region.id, 'plot')}><Icon.graph /> Graph</button>
-                )}
-                {(reading.acceptedText ?? '').trim() && (
-                  <button className="rb-action" onClick={() => onQuick(region.id, 'solve')}>Solve</button>
-                )}
-                <button className="rb-action" onClick={() => onQuick(region.id, 'ask')}><Icon.ask /> Ask</button>
-                <button className="link" onClick={() => setEditing({ id: region.id, text: reading.acceptedText ?? '' })}>Edit</button>
+              <div className="rb-card" role="group" aria-label="Help with this line" title={reading.rawText !== reading.acceptedText ? `NOVA first read: ${reading.rawText}` : undefined}>
+                <div className="rb-head">
+                  <span className="rb-label">I read</span>
+                  <span className="rb-text">{t}</span>
+                  <span className="spacer" />
+                  <button className="rb-edit" onClick={() => { setOpen(null); setEditing({ id: region.id, text: t }) }}>Edit</button>
+                  <button className="rb-close" aria-label="Close" onClick={() => setOpen(null)}><Icon.close /></button>
+                </div>
+                {c && <div className={`rb-check ${c.status}`}>{CHECK_LABEL[c.status]}</div>}
+                <div className="rb-help">
+                  <button className="rb-opt" onClick={() => go('hint')}><b>Hint</b><span>A nudge</span></button>
+                  <button className="rb-opt" onClick={() => go('explain')}><b>Explain</b><span>The why</span></button>
+                  <button className="rb-opt" onClick={() => go('solve')}><b>Full solution</b><span>All steps</span></button>
+                </div>
+                <div className="rb-foot">
+                  {/[yY]/.test(t) && /[xXθ]/.test(t) && <button className="rb-link" onClick={() => go('plot')}><Icon.graph /> Graph</button>}
+                  <button className="rb-link" onClick={() => go('ask')}>Ask NOVA about this line <span aria-hidden="true">→</span></button>
+                </div>
               </div>
             )
           }
@@ -132,7 +152,7 @@ export function ReadbackLayer({ page, view, phases, selectedRegionId, hoveredReg
               </div>
             )}
             {label && (
-              <div className="readback-anchor" style={{ left: Math.max(s.x, view.tx + 4, 4), top }} onPointerDown={stop} onClick={() => onSelect(region.id)}>
+              <div className={`readback-anchor ${open === region.id ? 'open' : ''}`} style={{ left: Math.max(s.x, view.tx + 4, 4), top }} onPointerDown={stop} onClick={() => open !== region.id && !reading?.state?.startsWith('accepted') && onSelect(region.id)}>
                 {label}
               </div>
             )}

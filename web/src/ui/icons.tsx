@@ -17,6 +17,7 @@ export const Icon = {
   undo: () => <I><path d="M9 14L4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></I>,
   redo: () => <I><path d="M15 14l5-5-5-5" /><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" /></I>,
   back: () => <I><path d="M15 18l-6-6 6-6" /></I>,
+  chevron: () => <I size={16}><path d="M6 9l6 6 6-6" /></I>,
   more: () => <I><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></I>,
   pages: () => <I><rect x="4" y="3" width="11" height="14" rx="1.5" /><path d="M9 21h9.5a1.5 1.5 0 0 0 1.5-1.5V8" /></I>,
   history: () => <I><path d="M4 5h16v11H9l-5 4V5z" /></I>,
