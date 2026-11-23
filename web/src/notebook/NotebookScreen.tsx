@@ -9,6 +9,7 @@ import { TutorLayer } from '../tutor/Annotations'
 import { useNova, type Intent } from '../tutor/useNova'
 import { AskPanel } from '../ui/AskPopover'
 import { TestPanel } from '../ui/TestPanel'
+import { StatusPill } from '../ui/StatusPill'
 import { activeTestFor, answerRegions } from '../tutor/usePaper'
 import { HandwritingSetup } from '../ui/HandwritingSetup'
 import type { StartAction } from '../ui/Home'
@@ -77,6 +78,10 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
   const { w: vw, h: vh } = useViewport()
   const phone = vw < 700 || Math.min(vw, vh) < 500 || (vw < 1000 && vh < 560)
   const desktop = vw >= 1100 && vh >= 600
+  // touch screens (tablets) get the tool dock on the left edge, under the writing hand's opposite side
+  const touch = useMemo(() => typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches, [])
+  // height of the floating bars over the page: the page's first line starts below them (Home has its own bar)
+  const chromeTop = home ? 0 : phone ? 76 : 84
 
   const [tool, setTool] = useState<Tool>('pen')
   const [hovered, setHovered] = useState<string | null>(null)
@@ -150,10 +155,10 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
     (v: View | ((v: View) => View)) => {
       setViewRaw((prev) => {
         const next = typeof v === 'function' ? v(prev) : v
-        return size.w ? clampView(next, stateRef.current.doc.pages[pageId], size.w, size.h) : next
+        return size.w ? clampView(next, stateRef.current.doc.pages[pageId], size.w, size.h, chromeTop) : next
       })
     },
-    [size.w, size.h, pageId],
+    [size.w, size.h, pageId, chromeTop],
   )
   /** Bring what NOVA just wrote into view: it must never land off-screen or behind the Ask panel. */
   const revealRef = useRef<(batchId: string) => void>(() => undefined)
@@ -184,16 +189,16 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
     if (page.bg) {
       // an imported sheet: fit its width, leaving the grid around it
       const scale = Math.min(2, (size.w - (phone ? 16 : 120)) / page.bg.w)
-      setView({ scale, tx: 0, ty: 0 })
+      setView({ scale, tx: 0, ty: chromeTop })
       return
     }
     if (isInfinite(page)) {
-      setView({ scale: 1, tx: 0, ty: 0 }) // phones too: zooming out makes finger writing huge in page terms
+      setView({ scale: 1, tx: 0, ty: chromeTop }) // phones too: zooming out makes finger writing huge in page terms
       return
     }
     const scale = Math.min(2, (size.w - (phone ? 16 : 48)) / page.width)
-    setView({ scale, tx: phone ? 8 : 24, ty: phone ? 12 : 16 })
-  }, [size.w, page, phone, setView])
+    setView({ scale, tx: phone ? 8 : 24, ty: chromeTop + (phone ? 12 : 16) })
+  }, [size.w, page, phone, setView, chromeTop])
 
   useLayoutEffect(() => {
     if (!size.w) return
@@ -495,7 +500,6 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
   const canUndo = (state.undo[pageId]?.length ?? 0) > 0
   const canRedo = (state.redo[pageId]?.length ?? 0) > 0
   const pageTurns = useMemo(() => page.history, [page.history])
-  const assistantBusy = nova.status.state === 'working'
 
   const toggleAssist = () => {
     if (settings.assist) setSettings({ ...settings, assist: false })
@@ -511,19 +515,21 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nova.status])
 
-  const statusPos = (() => {
-    const id = nova.status.anchorRegionId
-    const b = id ? regionBounds(id) : undefined
-    if (!b) return { left: 16, top: 12 }
-    return { left: Math.min(size.w - 280, Math.max(8, view.tx + (b.x + b.w) * view.scale + 16)), top: Math.max(8, view.ty + b.y * view.scale) }
-  })()
-
-  const toolButton = (t: Tool, label: string, icon: React.ReactNode, extra?: string) => (
-    <button key={t} className={`tool-btn ${tool === t ? 'active' : ''}`} aria-pressed={tool === t} aria-label={label} title={extra ? `${label} — ${extra}` : label} onClick={() => setTool(t)}>
+  const toolButton = (t: Tool, label: string, icon: React.ReactNode, extra?: string, showLabel = false) => (
+    <button key={t} className={`ob-tool ${tool === t ? 'on' : ''}`} aria-pressed={tool === t} aria-label={label} title={extra ? `${label} — ${extra}` : label} onClick={() => setTool(t)}>
       {icon}
-      {!phone && <span className="tool-label">{label}</span>}
+      {showLabel && <span className="ob-tool-label">{label}</span>}
     </button>
   )
+  const statusPill = (compact = false) => (
+    <StatusPill compact={compact} status={nova.status} onStop={nova.cancel} onDismiss={() => nova.setStatus({ state: 'idle' })} onIdleClick={() => setHistoryOpen((v) => !v)} />
+  )
+  const busyOrError = nova.status.state === 'working' || nova.status.state === 'error' || nova.status.state === 'notice'
+  const pageLabel = `${pageIndex + 1} / ${nb.orderedPageIds.length}`
+  const renameNotebook = () => {
+    const t = prompt('Notebook name', nb.title)
+    if (t !== null && t.trim()) dispatch({ type: 'renameNotebook', title: t.trim() })
+  }
 
   const inkPopover = (
     <div className="popover menu ink-pop" onPointerDown={(e) => e.stopPropagation()}>
@@ -577,6 +583,8 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
       <button className="menu-item" onClick={() => { void exportBackup(); setMenu(null) }}>Export backup</button>
       <button className="menu-item" onClick={() => { setFocus(true); setMenu(null) }}>Focus mode</button>
       <button className="menu-item" onClick={() => { setHistoryOpen(true); setMenu(null) }}>NOVA history</button>
+      <button className="menu-item" onClick={() => { setMenu('page') }}>Paper & page options…</button>
+      <button className="menu-item" onClick={() => { renameNotebook(); setMenu(null) }}>Rename notebook…</button>
       <button className="menu-item" onClick={() => { setTourOpen(true); setMenu(null) }}>What NOVA can do</button>
       <hr />
       <button className="menu-item" onClick={() => { addPage(); setMenu(null) }}>New page</button>
@@ -624,71 +632,86 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
         </header>
       )}
       {!focus && !home && (
-        <header className="topbar">
-          <button className="icon-btn" aria-label="Notebooks" onClick={onBack}><Icon.back />{!phone && <span className="tool-label">Notes</span>}</button>
-          {!phone && <img className="brand-logo sm" src="/nova-logo.png" alt="NOVA" />}
-          <input
-            className="title-input"
-            value={titleDraft}
-            aria-label="Notebook title"
-            onChange={(e) => setTitleDraft(e.target.value)}
-            onBlur={() => titleDraft.trim() !== nb.title && dispatch({ type: 'renameNotebook', title: titleDraft.trim() })}
-            onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-          />
-          <span className="spacer" />
-          {saveStatus === 'error' ? (
-            <button className="badge bad" onClick={onRetrySave} title={saveError ?? ''}>Not saved · Retry</button>
-          ) : (
-            !phone && <span className="save-status">{saveLabel}</span>
-          )}
-          {phone && (
-            // on a phone Assist must be one tap away: without it NOVA never reads what you write
-            <button className={`assist-toggle ${settings.assist ? 'on' : ''}`} onClick={toggleAssist} aria-pressed={settings.assist}>
-              Assist {settings.assist ? 'on' : 'off'}
-            </button>
-          )}
-          {!phone && <span className="sep">|</span>}
-          <button className="page-count" onClick={() => setPagesOpen((v) => !v)} aria-label={`Page ${pageIndex + 1} of ${nb.orderedPageIds.length}`}>{phone ? `${pageIndex + 1}/${nb.orderedPageIds.length}` : `Page ${pageIndex + 1} of ${nb.orderedPageIds.length}`}</button>
-          <div className="anchor-rel">
-            <button className="icon-btn" aria-label="More" onClick={(e) => { e.stopPropagation(); setMenu(menu === 'overflow' ? null : 'overflow') }}><Icon.more /></button>
-            {menu === 'overflow' && overflowPopover}
+        <div className={`ob-top ${phone ? 'phone' : ''}`}>
+          <div className="ob-capsule ob-left" onPointerDown={(e) => e.stopPropagation()}>
+            <button className="ob-icon" aria-label="Notebooks" title="Notebooks" onClick={onBack}><Icon.back /></button>
+            {phone ? (
+              busyOrError ? (
+                statusPill(true)
+              ) : (
+                <button className="ob-title-btn" onClick={() => setPagesOpen((v) => !v)} aria-label={`${nb.title}, page ${pageIndex + 1} of ${nb.orderedPageIds.length}. Open pages`}>
+                  <b>{nb.title}</b>
+                  <span>Page {pageIndex + 1} of {nb.orderedPageIds.length} · {saveLabel}</span>
+                </button>
+              )
+            ) : (
+              <>
+                <div className="ob-title">
+                  <input
+                    className="ob-title-input"
+                    value={titleDraft}
+                    aria-label="Notebook title"
+                    size={Math.max(8, Math.min(28, titleDraft.length + 1))}
+                    onChange={(e) => setTitleDraft(e.target.value)}
+                    onBlur={() => titleDraft.trim() !== nb.title && dispatch({ type: 'renameNotebook', title: titleDraft.trim() })}
+                    onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                  />
+                  {saveStatus === 'error' ? (
+                    <button className="ob-save bad" onClick={onRetrySave} title={saveError ?? ''}>Not saved · Retry</button>
+                  ) : (
+                    <span className="ob-save">{saveLabel}</span>
+                  )}
+                </div>
+                <button className={`ob-chip-btn ${pagesOpen ? 'on' : ''}`} onClick={() => setPagesOpen((v) => !v)} aria-label={`Pages: page ${pageIndex + 1} of ${nb.orderedPageIds.length}`}>{pageLabel}</button>
+              </>
+            )}
+            {phone && saveStatus === 'error' && <button className="ob-save bad" onClick={onRetrySave}>Retry save</button>}
+            {phone && !busyOrError && <span className={`ob-dot ${settings.assist ? 'ok' : 'off'}`} role="img" aria-label={settings.assist ? 'NOVA ready' : 'Assist is off'} />}
           </div>
-        </header>
+          {!phone && <div className="ob-center">{statusPill()}</div>}
+          {phone ? (
+            <button className="ob-ask" onPointerDown={(e) => e.stopPropagation()} onClick={() => openAsk(false)}><Icon.ask /> Ask</button>
+          ) : (
+            <div className="ob-capsule ob-right" onPointerDown={(e) => e.stopPropagation()}>
+              <button className={`ob-seg ${settings.assist ? 'on' : ''}`} onClick={toggleAssist} aria-pressed={settings.assist} title="Read your writing automatically after a pause">
+                <Icon.read /> Assist
+              </button>
+              {testsList.length > 0 && (
+                <button className={`ob-seg ${testOpen ? 'on' : ''}`} aria-pressed={testOpen} onClick={() => setTestOpen((v) => !v)}><Icon.check /> Test</button>
+              )}
+              <button className="ob-ask" onClick={() => openAsk(false)}><Icon.ask /> Ask NOVA</button>
+              <div className="anchor-rel">
+                <button className="ob-icon" aria-label="More" title="More" onClick={(e) => { e.stopPropagation(); setMenu(menu === 'overflow' || menu === 'page' ? null : 'overflow') }}><Icon.more /></button>
+                {menu === 'overflow' && overflowPopover}
+                {menu === 'page' && pagePopover}
+              </div>
+            </div>
+          )}
+        </div>
       )}
+      {!focus && home && busyOrError && <div className="ob-top home-only"><div className="ob-center">{statusPill()}</div></div>}
 
       {!focus && !phone && (
-        <div className="toolbar" role="toolbar" aria-label="Writing tools">
-          {!home && <button className={`tool-btn ${pagesOpen ? 'active' : ''}`} aria-label="Pages" onClick={() => setPagesOpen((v) => !v)}><Icon.pages /></button>}
-          {!home && <span className="tb-sep" />}
+        <div className={`ob-dock ${desktop && !touch ? 'bottom' : 'side'}`} role="toolbar" aria-label="Writing tools" aria-orientation={desktop && !touch ? 'horizontal' : 'vertical'} onPointerDown={(e) => e.stopPropagation()}>
           {toolButton('pen', 'Pen', <Icon.pen />)}
           {toolButton('eraser', 'Eraser', <Icon.eraser />, 'touch a stroke to delete it')}
           {toolButton('select', 'Select', <Icon.select />, 'drag around a line or tap it')}
           {toolButton('pan', 'Pan', <Icon.pan />)}
+          <span className="ob-sep" />
           <div className="anchor-rel">
-            <button className="tool-btn" aria-label="Ink colour and width" onClick={(e) => { e.stopPropagation(); setMenu(menu === 'ink' ? null : 'ink') }}>
-              <span className="ink-preview" style={{ background: colour, height: Math.max(2, width * 0.9) }} />
+            <button className={`ob-tool ${menu === 'ink' ? 'on' : ''}`} aria-label="Ink colour and width" title="Ink colour and width" onClick={(e) => { e.stopPropagation(); setMenu(menu === 'ink' ? null : 'ink') }}>
+              <span className="ob-ink" style={{ background: colour, height: Math.max(3, width * 1.1) }} />
             </button>
             {menu === 'ink' && inkPopover}
           </div>
-          <span className="tb-sep" />
-          <button className="tool-btn" aria-label="Undo" disabled={!canUndo} onClick={() => dispatch({ type: 'undo', pageId })}><Icon.undo /></button>
-          <button className="tool-btn" aria-label="Redo" disabled={!canRedo} onClick={() => dispatch({ type: 'redo', pageId })}><Icon.redo /></button>
-          <button className="tool-btn zoom" aria-label={isInfinite(page) ? 'Reset view' : 'Fit width'} title={isInfinite(page) ? 'Back to 100% at the top' : 'Fit width'} onClick={fitWidth}>{Math.round(view.scale * 100)}%</button>
-          <div className="anchor-rel">
-            <button className="tool-btn" aria-label="Page options" onClick={(e) => { e.stopPropagation(); setMenu(menu === 'page' ? null : 'page') }}><Icon.notebook /></button>
-            {menu === 'page' && pagePopover}
-          </div>
-          <span className="spacer" />
-          <button className={`assist-toggle ${settings.assist ? 'on' : ''}`} onClick={toggleAssist} aria-pressed={settings.assist} title="Automatically read your writing after a pause">
-            Assist {settings.assist ? 'on' : 'off'}
-          </button>
-          {testsList.length > 0 && (
-            <button className={`tool-btn test-btn ${testOpen ? 'active' : ''}`} aria-label="Test" onClick={() => setTestOpen((v) => !v)}><Icon.check /><span className="tool-label">Test</span></button>
+          <span className="ob-sep" />
+          <button className="ob-tool" aria-label="Undo" title="Undo" disabled={!canUndo} onClick={() => dispatch({ type: 'undo', pageId })}><Icon.undo /></button>
+          <button className="ob-tool" aria-label="Redo" title="Redo" disabled={!canRedo} onClick={() => dispatch({ type: 'redo', pageId })}><Icon.redo /></button>
+          <span className="ob-sep" />
+          {desktop && !touch && (
+            <button className="ob-tool ob-zoom" aria-label={isInfinite(page) ? 'Reset view' : 'Fit width'} title={isInfinite(page) ? 'Back to 100% at the top' : 'Fit width'} onClick={fitWidth}>{Math.round(view.scale * 100)}%</button>
           )}
-          <button className="tool-btn" aria-label="Share page" title="Share this page as an image" disabled={sharing} onClick={() => void sharePage('share')}><Icon.share /></button>
-          <button className={`tool-btn ${historyOpen ? 'active' : ''}`} aria-label="History" onClick={() => setHistoryOpen((v) => !v)}><Icon.history /></button>
-          <button className="ask-btn" onClick={() => openAsk(false)}><Icon.ask /> Ask NOVA</button>
-          <button className="tool-btn" aria-label="Ask by voice" onClick={() => openAsk(true)}><Icon.mic /></button>
+          <button className="ob-tool" aria-label="Ask by voice" title="Ask by voice" onClick={() => openAsk(true)}><Icon.mic /></button>
         </div>
       )}
 
@@ -770,15 +793,6 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
                 }}
               />
               {selected && !ask && <RegionMenu page={page} view={view} regionId={selected} viewport={size} onAction={regionAction} />}
-              {nova.status.state !== 'idle' && !ask && (
-                <div className={`nova-status ${nova.status.state}`} style={statusPos} onPointerDown={(e) => e.stopPropagation()} role="status">
-                  {assistantBusy && <span className="spinner" />}
-                  <span>{nova.status.message}</span>
-                  {assistantBusy && <button className="link" onClick={nova.cancel}>Stop</button>}
-                  {nova.status.retry && <button className="link strong" onClick={nova.status.retry}>Retry</button>}
-                  {!assistantBusy && <button className="icon-btn sm" aria-label="Dismiss" onClick={() => nova.setStatus({ state: 'idle' })}><Icon.close /></button>}
-                </div>
-              )}
             </>
           }
         />
@@ -800,31 +814,32 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
       </div>
 
       {phone && !focus && (
-        <nav className="dock" aria-label="Writing tools">
-          {toolButton('pen', 'Pen', <Icon.pen />)}
-          {toolButton('eraser', 'Eraser', <Icon.eraser />)}
-          <button className="tool-btn" aria-label="Undo" disabled={!canUndo} onClick={() => dispatch({ type: 'undo', pageId })}><Icon.undo /></button>
-          <button className="tool-btn ask-dock" aria-label="Ask NOVA" onClick={() => openAsk(false)}><Icon.ask /></button>
-          <button className="tool-btn" aria-label="Ask by voice" onClick={() => openAsk(true)}><Icon.mic /></button>
+        <nav className="ob-phonebar" aria-label="Writing tools" onPointerDown={(e) => e.stopPropagation()}>
+          {toolButton('pen', 'Pen', <Icon.pen />, undefined, true)}
+          {toolButton('eraser', 'Eraser', <Icon.eraser />, undefined, true)}
+          {toolButton('pan', 'Move', <Icon.pan />, undefined, true)}
+          <button className="ob-tool" aria-label="Undo" disabled={!canUndo} onClick={() => dispatch({ type: 'undo', pageId })}><Icon.undo /><span className="ob-tool-label">Undo</span></button>
           <div className="anchor-rel">
-            <button className="tool-btn" aria-label="More tools" onClick={(e) => { e.stopPropagation(); setMenu(menu === 'dock' ? null : 'dock') }}><Icon.more /></button>
+            <button className={`ob-tool ${menu === 'dock' || menu === 'page' ? 'on' : ''}`} aria-label="More tools" onClick={(e) => { e.stopPropagation(); setMenu(menu === 'dock' ? null : 'dock') }}><Icon.more /><span className="ob-tool-label">More</span></button>
             {menu === 'dock' && (
               <div className="popover menu dock-pop" onPointerDown={(e) => e.stopPropagation()}>
                 <div className="row gap">
                   {toolButton('select', 'Select', <Icon.select />)}
-                  {toolButton('pan', 'Pan', <Icon.pan />)}
-                  <button className="tool-btn" aria-label="Redo" disabled={!canRedo} onClick={() => dispatch({ type: 'redo', pageId })}><Icon.redo /></button>
-                  <button className="tool-btn" aria-label="Fit width" onClick={() => { fitWidth(); setMenu(null) }}><Icon.fit /></button>
+                  <button className="ob-tool" aria-label="Redo" disabled={!canRedo} onClick={() => dispatch({ type: 'redo', pageId })}><Icon.redo /></button>
+                  <button className="ob-tool" aria-label="Fit width" onClick={() => { fitWidth(); setMenu(null) }}><Icon.fit /></button>
+                  <button className="ob-tool" aria-label="Ask by voice" onClick={() => { openAsk(true); setMenu(null) }}><Icon.mic /></button>
                 </div>
                 {inkPopover.props.children}
                 <hr />
                 <button className="menu-item" onClick={() => { toggleAssist(); setMenu(null) }}>Assist: {settings.assist ? 'on' : 'off'}</button>
+                {testsList.length > 0 && <button className="menu-item" onClick={() => { setTestOpen(true); setMenu(null) }}>Test / practice sheet</button>}
                 <button className="menu-item" onClick={() => { setPagesOpen(true); setMenu(null) }}>Pages</button>
                 <button className="menu-item" onClick={() => { setHistoryOpen(true); setMenu(null) }}>NOVA history</button>
                 <button className="menu-item" onClick={() => { setPracticeOpen({ example: null }); setMenu(null) }}>Practice a topic…</button>
                 <button className="menu-item" disabled={sharing} onClick={() => void sharePage('share')}>Share page</button>
-                {testsList.length > 0 && <button className="menu-item" onClick={() => { setTestOpen(true); setMenu(null) }}>Test / practice sheet</button>}
-                <button className="menu-item" onClick={() => { setMenu('page') }}>Page options…</button>
+                <button className="menu-item" onClick={() => { renameNotebook(); setMenu(null) }}>Rename notebook…</button>
+                <button className="menu-item" onClick={() => { setMenu('page') }}>Paper & page options…</button>
+                <button className="menu-item" onClick={() => { setSettingsOpen(true); setMenu(null) }}>Settings</button>
               </div>
             )}
             {menu === 'page' && pagePopover}
@@ -833,12 +848,12 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
       )}
 
       {focus && (
-        <div className="focus-dock" onPointerDown={(e) => e.stopPropagation()}>
+        <div className="focus-dock ob-dock floating" onPointerDown={(e) => e.stopPropagation()}>
           {toolButton('pen', 'Pen', <Icon.pen />)}
           {toolButton('eraser', 'Eraser', <Icon.eraser />)}
-          <button className="tool-btn" aria-label="Undo" disabled={!canUndo} onClick={() => dispatch({ type: 'undo', pageId })}><Icon.undo /></button>
-          <button className="tool-btn" aria-label="Stop NOVA" onClick={nova.cancel}><Icon.stop /></button>
-          <button className="tool-btn" aria-label="Exit focus mode" onClick={() => setFocus(false)}><Icon.focus /></button>
+          <button className="ob-tool" aria-label="Undo" disabled={!canUndo} onClick={() => dispatch({ type: 'undo', pageId })}><Icon.undo /></button>
+          <button className="ob-tool" aria-label="Stop NOVA" onClick={nova.cancel}><Icon.stop /></button>
+          <button className="ob-tool" aria-label="Exit focus mode" onClick={() => setFocus(false)}><Icon.focus /></button>
         </div>
       )}
 

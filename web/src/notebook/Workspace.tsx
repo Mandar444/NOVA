@@ -40,18 +40,19 @@ type Gesture =
 /** Blank pages are an endless grid (it grows right and down); imported papers/photos keep their page shape. */
 export const isInfinite = (_page: Page) => true // imported sheets sit on the same endless grid
 
-export function clampView(v: View, page: Page, w: number, h: number): View {
+/** `top` = height of the floating bar over the page: the sheet's first line starts below it. */
+export function clampView(v: View, page: Page, w: number, h: number, top = 0): View {
   const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, v.scale))
   const pw = page.width * scale, ph = page.height * scale
   if (isInfinite(page)) {
     // the sheet starts at the top-left corner and keeps going: always room for one more screen of space
     const tx = Math.min(0, Math.max(-(pw + w * 0.75 - w), v.tx))
-    const ty = Math.min(0, Math.max(-(ph + h * 0.75 - h), v.ty))
+    const ty = Math.min(top, Math.max(-(ph + h * 0.75 - h), v.ty))
     return { scale, tx, ty }
   }
   const margin = 48
   const tx = pw + 2 * margin <= w ? (w - pw) / 2 : Math.min(margin, Math.max(w - pw - margin, v.tx))
-  const ty = Math.min(margin + 80, Math.max(h - ph - margin, v.ty)) // room for the floating toolbar
+  const ty = Math.min(Math.max(margin + 80, top + margin), Math.max(h - ph - margin, v.ty)) // room for the floating bars
   return { scale, tx, ty }
 }
 

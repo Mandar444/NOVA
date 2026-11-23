@@ -1,9 +1,9 @@
-// 20px line icons, 1.6 stroke, currentColor.
+// Line icons on a 24 grid, 1.8 stroke, round caps, currentColor (Orbit).
 import type { ReactNode } from 'react'
 
 function I({ children, size = 20 }: { children: ReactNode; size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       {children}
     </svg>
   )
@@ -13,7 +13,7 @@ export const Icon = {
   pen: () => <I><path d="M4 20l1.2-4.4L15.8 5a2 2 0 0 1 2.8 0l.4.4a2 2 0 0 1 0 2.8L8.4 18.8 4 20z" /><path d="M14 7l3 3" /></I>,
   eraser: () => <I><path d="M8.5 19.5h11" /><path d="M5.2 15.3l8.9-8.9a2 2 0 0 1 2.8 0l2.2 2.2a2 2 0 0 1 0 2.8l-7.8 7.8a1 1 0 0 1-.7.3H8.8a1 1 0 0 1-.7-.3l-2.9-2.9a.7.7 0 0 1 0-1z" /><path d="M9.5 11l4.8 4.8" /></I>,
   select: () => <I><path d="M4 7V5a1 1 0 0 1 1-1h2M11 4h2M17 4h2a1 1 0 0 1 1 1v2M20 11v2M4 11v2M4 17v2a1 1 0 0 0 1 1h2M11 20h2" /><path d="M15 14l5 2-2 1-1 2-2-5z" /></I>,
-  pan: () => <I><path d="M12 3v18M3 12h18" /><path d="M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3" /></I>,
+  pan: () => <I><path d="M8 13V6a1.5 1.5 0 0 1 3 0v5M11 11V4.5a1.5 1.5 0 0 1 3 0V11M14 11V6a1.5 1.5 0 0 1 3 0v7c0 4-2.5 7-6 7-3 0-4.5-1.8-6-4.5L3.5 13a1.5 1.5 0 0 1 2.5-1.6L8 13" /></I>,
   undo: () => <I><path d="M9 14L4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></I>,
   redo: () => <I><path d="M15 14l5-5-5-5" /><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" /></I>,
   back: () => <I><path d="M15 18l-6-6 6-6" /></I>,
