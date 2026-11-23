@@ -108,14 +108,14 @@ export function ReadbackLayer({ page, view, phases, selectedRegionId, hoveredReg
                   <span className="rb-label">I read</span>
                   <span className="rb-text">{t}</span>
                   <span className="spacer" />
-                  <button className="rb-edit" onClick={() => { setOpen(null); setEditing({ id: region.id, text: t }) }}>Edit</button>
+                  <button className="rb-edit" aria-label="Edit what NOVA read" onClick={() => { setOpen(null); setEditing({ id: region.id, text: t }) }}><Icon.edit />Edit</button>
                   <button className="rb-close" aria-label="Close" onClick={() => setOpen(null)}><Icon.close /></button>
                 </div>
                 {c && <div className={`rb-check ${c.status}`}>{CHECK_LABEL[c.status]}</div>}
                 <div className="rb-help">
-                  <button className="rb-opt" onClick={() => go('hint')}><b>Hint</b><span>A nudge</span></button>
-                  <button className="rb-opt" onClick={() => go('explain')}><b>Explain</b><span>The why</span></button>
-                  <button className="rb-opt" onClick={() => go('solve')}><b>Full solution</b><span>All steps</span></button>
+                  <button className="rb-opt hint" aria-label="Hint: a small nudge" onClick={() => go('hint')}><b><Icon.bulb />Hint</b><span>A nudge</span></button>
+                  <button className="rb-opt explain" aria-label="Explain: why this step" onClick={() => go('explain')}><b><Icon.book />Explain</b><span>The why</span></button>
+                  <button className="rb-opt solution" aria-label="Full solution: all steps" onClick={() => go('solve')}><b><Icon.steps />Full solution</b><span>All steps</span></button>
                 </div>
                 <div className="rb-foot">
                   {/[yY]/.test(t) && /[xXθ]/.test(t) && <button className="rb-link" onClick={() => go('plot')}><Icon.graph /> Graph</button>}

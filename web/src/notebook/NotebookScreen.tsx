@@ -540,6 +540,14 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nova.status])
 
+  const zoomBy = (f: number) => {
+    autoFit.current = false
+    setView((v) => {
+      const scale = Math.min(4, Math.max(0.2, Math.round(v.scale * f * 100) / 100))
+      const cx = size.w / 2, cy = size.h / 2
+      return { scale, tx: cx - ((cx - v.tx) * scale) / v.scale, ty: cy - ((cy - v.ty) * scale) / v.scale }
+    })
+  }
   const toolButton = (t: Tool, label: string, icon: React.ReactNode, extra?: string, showLabel = false) => (
     <button key={t} className={`ob-tool ${tool === t ? 'on' : ''}`} aria-pressed={tool === t} aria-label={label} title={extra ? `${label} — ${extra}` : label} onClick={() => setTool(t)}>
       {icon}
@@ -547,7 +555,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
     </button>
   )
   const statusPill = (compact = false) => (
-    <StatusPill compact={compact} status={nova.status} onStop={nova.cancel} onDismiss={() => nova.setStatus({ state: 'idle' })} onIdleClick={() => setHistoryOpen((v) => !v)} />
+    <StatusPill compact={compact} status={nova.status} checked={page.regions.filter((r) => page.readings[r.id]?.state === 'accepted').length} onStop={nova.cancel} onDismiss={() => nova.setStatus({ state: 'idle' })} onIdleClick={() => setHistoryOpen((v) => !v)} />
   )
   const busyOrError = nova.status.state === 'working' || nova.status.state === 'error' || nova.status.state === 'notice'
   const pageLabel = `${pageIndex + 1} / ${nb.orderedPageIds.length}`
@@ -557,18 +565,16 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
   }
 
   const inkPopover = (
-    <div className="popover menu ink-pop" onPointerDown={(e) => e.stopPropagation()}>
-      <div className="pop-label">Colour</div>
-      <div className="row gap">
+    <div className="popover ink-pop" role="dialog" aria-label="Ink colour and width" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="ink-row">
         {INK_COLOURS.map((c) => (
-          <button key={c.value} className={`swatch ${colour === c.value ? 'on' : ''}`} style={{ background: c.value }} aria-label={c.name} onClick={() => { setColour(c.value); setTool('pen') }} />
+          <button key={c.value} className={`ink-swatch ${colour === c.value ? 'on' : ''}`} aria-label={`Ink: ${c.name.toLowerCase()}`} aria-pressed={colour === c.value} onClick={() => { setColour(c.value); setTool('pen') }}><span style={{ background: c.value }} /></button>
         ))}
       </div>
-      <div className="pop-label">Width</div>
-      <div className="row gap">
+      <div className="ink-row">
         {INK_WIDTHS.map((w) => (
-          <button key={w.value} className={`width-btn ${width === w.value ? 'on' : ''}`} aria-label={w.name} onClick={() => { setWidth(w.value); setTool('pen') }}>
-            <span style={{ height: Math.max(2, w.value * 0.9), background: colour }} />
+          <button key={w.value} className={`ink-width ${width === w.value ? 'on' : ''}`} aria-label={w.name} aria-pressed={width === w.value} onClick={() => { setWidth(w.value); setTool('pen') }}>
+            <span style={{ height: Math.max(2, Math.round(w.value * 1.15)) }} />
           </button>
         ))}
       </div>
@@ -703,10 +709,10 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
                   {saveStatus === 'error' ? (
                     <button className="ob-save bad" onClick={onRetrySave} title={saveError ?? ''}>Not saved · Retry</button>
                   ) : (
-                    <span className="ob-save">{saveLabel}</span>
+                    <span className="ob-save"><span className={`ob-save-dot ${saveStatus}`} aria-hidden="true" />{saveLabel}</span>
                   )}
                 </div>
-                <button className={`ob-chip-btn ${pagesOpen ? 'on' : ''}`} onClick={() => setPagesOpen((v) => !v)} aria-label={`Pages: page ${pageIndex + 1} of ${nb.orderedPageIds.length}`}>{pageLabel}</button>
+                <button className={`ob-chip-btn ${pagesOpen ? 'on' : ''}`} onClick={() => setPagesOpen((v) => !v)} aria-label={`Pages: page ${pageIndex + 1} of ${nb.orderedPageIds.length}`}><Icon.pages />{pageLabel}</button>
               </>
             )}
             {phone && saveStatus === 'error' && <button className="ob-save bad" onClick={onRetrySave}>Retry save</button>}
@@ -717,13 +723,15 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
             <button className="ob-ask" onPointerDown={(e) => e.stopPropagation()} onClick={() => openAsk(false)}><Icon.ask /> Ask</button>
           ) : (
             <div className="ob-capsule ob-right" onPointerDown={(e) => e.stopPropagation()}>
-              <button data-testid="assist-toggle" className={`ob-seg ${settings.assist ? 'on' : ''}`} onClick={toggleAssist} aria-pressed={settings.assist} title="Read your writing automatically after a pause">
-                <Icon.read /> Assist
+              <button data-testid="assist-toggle" className={`ob-seg ob-assist ${settings.assist ? 'on' : ''}`} onClick={toggleAssist} aria-pressed={settings.assist} title="Read your writing automatically after a pause">
+                Assist<span className="ob-switch" aria-hidden="true"><i /></span>
               </button>
+              <span className="ob-vsep" aria-hidden="true" />
               {testsList.length > 0 && (
                 <button className={`ob-seg ${testOpen ? 'on' : ''}`} aria-pressed={testOpen} onClick={() => { if (ask && testOpen && sideTab === 'ask') setSideTab('test'); else setTestOpen((v) => !v) }}><Icon.check /> Test</button>
               )}
-              <button className="ob-ask" onClick={() => openAsk(false)}><Icon.ask /> Ask NOVA</button>
+              <button className={`ob-icon ${historyOpen ? 'on' : ''}`} aria-label="History" title="NOVA history" onClick={() => setHistoryOpen((v) => !v)}><Icon.clock /></button>
+              <button className="ob-ask" onClick={() => openAsk(false)}><Icon.chat /> Ask NOVA</button>
               <div className="anchor-rel">
                 <button className="ob-icon" aria-label="More" title="More" onClick={(e) => { e.stopPropagation(); setMenu(menu === 'overflow' || menu === 'page' ? null : 'overflow') }}><Icon.more /></button>
                 {menu === 'overflow' && overflowPopover}
@@ -737,27 +745,40 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
 
       {!focus && !phone && (
         <div className={`ob-dock ${desktop && !touch ? 'bottom' : 'side'}`} role="toolbar" aria-label="Writing tools" aria-orientation={desktop && !touch ? 'horizontal' : 'vertical'} onPointerDown={(e) => e.stopPropagation()}>
-          {toolButton('pen', 'Pen', <Icon.pen />)}
-          {toolButton('eraser', 'Eraser', <Icon.eraser />, 'touch a stroke to delete it')}
-          {toolButton('select', 'Select', <Icon.select />, 'drag around a line or tap it')}
-          {toolButton('pan', 'Pan', <Icon.pan />)}
+          {toolButton('pen', 'Pen', <Icon.pen />, undefined, desktop && !touch)}
+          {toolButton('eraser', 'Eraser', <Icon.eraser />, 'touch a stroke to delete it', desktop && !touch)}
+          {toolButton('select', 'Select', <Icon.select />, 'drag around a line or tap it', desktop && !touch)}
+          {toolButton('pan', 'Pan', <Icon.pan />, undefined, desktop && !touch)}
           <span className="ob-sep" />
           <div className="anchor-rel">
-            <button className={`ob-tool ${menu === 'ink' ? 'on' : ''}`} aria-label="Ink colour and width" title="Ink colour and width" onClick={(e) => { e.stopPropagation(); setMenu(menu === 'ink' ? null : 'ink') }}>
-              <span className="ob-ink" style={{ background: colour, height: Math.max(3, width * 1.1) }} />
+            <button className={`ob-tool ob-inkbtn ${menu === 'ink' ? 'open' : ''}`} aria-label="Ink colour and width" aria-expanded={menu === 'ink'} title="Ink colour and width" onClick={(e) => { e.stopPropagation(); setMenu(menu === 'ink' ? null : 'ink') }}>
+              <span className="ob-ink-dot" style={{ background: colour }} />
+              {desktop && !touch && <span className="ob-tool-label">Ink</span>}
             </button>
             {menu === 'ink' && inkPopover}
           </div>
           <span className="ob-sep" />
-          <button className="ob-tool" aria-label="Undo" title="Undo" disabled={!canUndo} onClick={() => dispatch({ type: 'undo', pageId })}><Icon.undo /></button>
-          <button className="ob-tool" aria-label="Redo" title="Redo" disabled={!canRedo} onClick={() => dispatch({ type: 'redo', pageId })}><Icon.redo /></button>
-          <span className="ob-sep" />
-          {desktop && !touch && (
-            <button className="ob-tool ob-zoom" aria-label={isInfinite(page) ? 'Reset view' : 'Fit width'} title={isInfinite(page) ? 'Back to 100% at the top' : 'Fit width'} onClick={fitWidth}>{Math.round(view.scale * 100)}%</button>
+          <button className="ob-tool sm" aria-label="Undo" title="Undo" disabled={!canUndo} onClick={() => dispatch({ type: 'undo', pageId })}><Icon.undo /></button>
+          <button className="ob-tool sm" aria-label="Redo" title="Redo" disabled={!canRedo} onClick={() => dispatch({ type: 'redo', pageId })}><Icon.redo /></button>
+          {!(desktop && !touch) && (
+            <>
+              <span className="ob-sep" />
+              <button className="ob-tool sm ob-speak-ic" aria-label="Speak a question" title="Speak a question" onClick={() => openAsk(true)}><Icon.mic /></button>
+            </>
           )}
-          <button className="ob-tool" aria-label="Ask by voice" title="Ask by voice" onClick={() => openAsk(true)}><Icon.mic /></button>
         </div>
       )}
+      {!focus && !phone && desktop && !touch && (
+        <>
+          <button className="ob-speak" aria-label="Speak a question to NOVA" onPointerDown={(e) => e.stopPropagation()} onClick={() => openAsk(true)}><span><Icon.mic /></span>Speak</button>
+          <div className="ob-zoomcap" onPointerDown={(e) => e.stopPropagation()}>
+            <button aria-label="Zoom out" onClick={() => zoomBy(1 / 1.2)}>−</button>
+            <button className="ob-zoompct" aria-label={`Reset zoom, currently ${Math.round(view.scale * 100)} percent`} onClick={fitWidth}>{Math.round(view.scale * 100)}%</button>
+            <button aria-label="Zoom in" onClick={() => zoomBy(1.2)}>+</button>
+          </div>
+        </>
+      )}
+      {!focus && !phone && !home && touch && <div className="ob-gesture-hint" aria-hidden="true">Pinch to zoom · 2 fingers to pan</div>}
 
       <div className="body">
         {pagesOpen && !focus && <PagesRail doc={doc} currentId={pageId} drawer={!desktop} onOpen={openPage} onNew={addPage} onClose={() => setPagesOpen(false)} />}

@@ -1,9 +1,11 @@
 import type { Paper, Point, Stroke } from './types'
 
 export const INK_COLOURS = [
-  { name: 'Charcoal', value: '#20252B' },
-  { name: 'Blue', value: '#245C9C' },
-  { name: 'Red', value: '#C2352E' },
+  { name: 'Navy', value: '#1D2B6B' },
+  { name: 'Black', value: '#17161F' },
+  { name: 'Blue', value: '#1F6FEB' },
+  { name: 'Green', value: '#0F7B5F' },
+  { name: 'Maroon', value: '#8E2440' },
 ]
 export const INK_WIDTHS = [
   { name: 'Fine', value: 2.2 },

@@ -19,9 +19,10 @@ interface Props {
   onDismiss: () => void
   onIdleClick?: () => void
   compact?: boolean // phone: lives inside the top capsule
+  checked?: number // lines NOVA has read and accepted on this page
 }
 
-export function StatusPill({ status, onStop, onDismiss, onIdleClick, compact }: Props) {
+export function StatusPill({ status, onStop, onDismiss, onIdleClick, compact, checked = 0 }: Props) {
   const working = status.state === 'working'
   const [startedAt, setStartedAt] = useState(0)
   const [now, setNow] = useState(0)
@@ -40,7 +41,7 @@ export function StatusPill({ status, onStop, onDismiss, onIdleClick, compact }: 
     return (
       <button data-testid="nova-status" className="ob-pill idle" onClick={onIdleClick} aria-label="NOVA ready. Show NOVA history">
         <span className="ob-dot ok" aria-hidden="true" />
-        NOVA ready
+        {checked > 0 ? `NOVA checked ${checked} ${checked === 1 ? 'line' : 'lines'}` : 'NOVA ready'}
       </button>
     )
   }
@@ -50,7 +51,7 @@ export function StatusPill({ status, onStop, onDismiss, onIdleClick, compact }: 
         <span className="ob-pill-mark" aria-hidden="true"><Icon.ask /></span>
         <span className="ob-pill-body">
           <span className="ob-pill-text">{status.message || 'Working…'}</span>
-          {!compact && <span className="ob-pill-track" aria-hidden="true"><span /></span>}
+          {!compact && <span className="ob-pill-track" aria-hidden="true"><span style={{ width: `${Math.min(95, 8 + secs * 3)}%` }} /></span>}
         </span>
         {secs >= 2 && <span className="ob-pill-secs">{secs} s</span>}
         <button className="ob-pill-stop" onClick={onStop} aria-label="Stop NOVA"><Icon.stop />{!compact && 'Stop'}</button>
