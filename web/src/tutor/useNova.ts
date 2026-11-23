@@ -11,7 +11,8 @@ import { inflate, intersects, strokeBounds, union } from '../notebook/geometry'
 import { RecognitionScheduler, type ReadPhase } from '../recognition/scheduler'
 import { speak, stopSpeaking } from '../voice/speech'
 import { trace } from './trace'
-import { ApiFailure, INTERACTIVE_DEADLINE_MS, api, type RequestContext, type TutorPayload, type TutorResult } from './api'
+import { readLocally, localReaderEnabled, warmLocalReader, engineText, type LocalResult, type LocalAnswers } from '../recognition/localReader'
+import { ApiFailure, INTERACTIVE_DEADLINE_MS, TEACHING_DEADLINE_MS, api, type RequestContext, type TutorPayload, type TutorResult } from './api'
 import { placeBatch } from './layout'
 import { getLibrary } from '../handwriting/library'
 import { placeInk } from '../handwriting/place'
@@ -105,7 +106,12 @@ function isWorkingStep(page: Page, problemId: string, line: { bounds: Rect }, te
 }
 
 export function useNova(o: Options) {
-  const [phases, setPhases] = useState<Record<string, { phase: ReadPhase; error?: string }>>({})
+  const [phases, setPhases] = useState<Record<string, { phase: ReadPhase; error?: string; since?: number }>>({})
+  // local reader results that were NOT reliable enough to act on alone: their symbol questions are shown while the cloud reads
+  const [localPending, setLocalPending] = useState<Record<string, { sourceHash: string; read: LocalResult; answers: LocalAnswers }>>({})
+  const localRef = useRef(localPending)
+  localRef.current = localPending
+  useEffect(() => { warmLocalReader() }, [])
   const [status, setStatus] = useState<TutorStatus>({ state: 'idle' })
   const opts = useRef(o)
   opts.current = o
@@ -127,6 +133,17 @@ export function useNova(o: Options) {
     opts.current.penActive.current = false
   }
 
+  /** A local reading NOVA may use: store it as accepted and send it to the exact maths engine (same path as cloud readings). */
+  const acceptLocal = (pageId: string, regionId: string, sourceHash: string, literal: string, model: string, automatic: boolean) => {
+    const p0 = page()
+    const prev = p0?.readings[regionId]
+    const text = engineText(literal)
+    const incomplete = /[=+\-×÷/]$/.test(text)
+    opts.current.dispatch({ type: 'setReading', pageId, regionId, reading: { rawText: text, alternatives: [], needsClarification: false, status: incomplete ? 'incomplete' : 'expression',
+      state: automatic ? 'accepted' : 'readback_ready', acceptedText: automatic ? text : undefined, sourceHash, interpretationRevision: (prev?.interpretationRevision ?? 0) + 1, model } })
+    if (automatic) void react(regionId, sourceHash)
+  }
+
   const readRegion = useCallback(async (regionId: string, changedAt: number = Date.now()) => {
     const p = page()
     const region = p?.regions.find((r) => r.id === regionId)
@@ -143,6 +160,25 @@ export function useNova(o: Options) {
     }
     const key = `${regionId}:${region.sourceHash}`
     trace(key, 'read-start')
+    // 1. NOVA's own reader in the browser (worker). Acts alone only on lines that pass the reliability gate.
+    if (localReaderEnabled()) {
+      const strokes = region.sourceStrokeIds.map((id) => p.strokes.find((s) => s.id === id)?.points).filter((s): s is NonNullable<typeof s> => !!s && s.length > 0)
+      try {
+        const lr = await readLocally(strokes)
+        trace(key, 'local', { ms: lr.ms, status: lr.result.status, reliable: lr.result.reliable, gate: lr.result.gate.join('; '), text: lr.result.literal })
+        const now0 = page(), cur0 = now0?.regions.find((r) => r.id === regionId)
+        if (!now0 || now0.id !== p.id || !cur0 || cur0.sourceHash !== region.sourceHash) { trace(key, 'stale-drop'); return }
+        if (lr.result.reliable) {
+          setLocalPending((prev) => { const n = { ...prev }; delete n[regionId]; return n })
+          acceptLocal(p.id, regionId, region.sourceHash, lr.result.literal, 'local-v3g', true)
+          return
+        }
+        setLocalPending((prev) => ({ ...prev, [regionId]: { sourceHash: region.sourceHash, read: lr.result, answers: {} } }))
+      } catch (e) {
+        trace(key, 'local-fail', { error: (e as Error).message })
+      }
+    }
+    // 2. uncertain / unsupported / local reader unavailable: BharatCode reads the ink crop
     const img = await renderRegion(p, region.sourceStrokeIds, region.bounds, p.docText ? null : opts.current.background.current) // printed paper text is not the student's writing
     trace(key, 'img', { bytes: Math.round(img.png.length * 0.75), w: Math.round(img.crop.w), h: Math.round(img.crop.h) })
     const ctx = makeContext(p, region, p.readings[regionId])
@@ -175,7 +211,14 @@ export function useNova(o: Options) {
       const cur = now?.regions.find((r) => r.id === regionId)
       if (!now || now.id !== ctx.pageId || !cur || cur.sourceHash !== ctx.sourceHash) { trace(key, 'stale-drop'); return } // stale: ink changed, it will be re-read
       // two independent reads agreed: accept it (the student can still Edit); disagreement asks the student
-      const clear = !res.needsClarification && res.status !== 'none' && !!res.rawText
+      // cross-check with NOVA's own read: a small mark it saw clearly (decimal point, comma) that the cloud reading lacks
+      // → don't act on it automatically; show the cloud reading for the student to confirm or edit (never rewritten here)
+      const lp0 = localRef.current[regionId]
+      const marksMissing = (!!lp0 && lp0.sourceHash === region.sourceHash && ['.', ','].some((m) =>
+        lp0.read.tokens.filter((t) => t.label === m && t.p >= 0.5).length > (res.rawText.split(m).length - 1)))
+        || /(^|[^\d.])0\d/.test(res.rawText) // "05": a lost decimal point is likelier than a written leading zero — ask
+      if (marksMissing) trace(key, 'cross-check', { local: lp0!.read.literal, cloud: res.rawText })
+      const clear = !res.needsClarification && res.status !== 'none' && !!res.rawText && !marksMissing
       const reading: Reading = {
         rawText: res.rawText,
         alternatives: res.alternatives,
@@ -189,7 +232,16 @@ export function useNova(o: Options) {
         latencyMs: res.latencyMs,
       }
       opts.current.dispatch({ type: 'setReading', pageId: ctx.pageId, regionId, reading })
+      setLocalPending((prev) => { if (!prev[regionId]) return prev; const n = { ...prev }; delete n[regionId]; return n })
       if (clear) void react(regionId, ctx.sourceHash)
+    } catch (e) {
+      // the cloud could not read it (busy, timeout, offline, malformed): keep the work usable — NOVA's own reading becomes
+      // an editable suggestion; the error and Retry still show
+      const lp = localRef.current[regionId]
+      if (lp && lp.sourceHash === region.sourceHash && lp.read.literal && (e as ApiFailure)?.code !== 'CANCELLED') {
+        opts.current.dispatch({ type: 'setReading', pageId: ctx.pageId, regionId, reading: { rawText: lp.read.literal, alternatives: [], needsClarification: false, status: 'expression', state: 'readback_ready', sourceHash: region.sourceHash, interpretationRevision: ctx.interpretationRevision, model: 'local-v3g (suggestion; cloud unavailable)' } })
+      }
+      throw e
     } finally {
       clearTimeout(timer)
       readAbort.current.delete(ctl)
@@ -326,7 +378,7 @@ export function useNova(o: Options) {
         onPhase: (id, phase, error) =>
           setPhases((prev) => {
             const next = { ...prev }
-            if (phase) next[id] = { phase, error }
+            if (phase) next[id] = { phase, error, since: phase === prev[id]?.phase ? prev[id]?.since : Date.now() }
             else delete next[id]
             return next
           }),
@@ -406,6 +458,7 @@ export function useNova(o: Options) {
     async (intent: Intent, question: string, selectedRegionId: string | null, extra?: { exam?: NonNullable<TutorPayload['exam']>; anchorRect?: Rect; speak?: boolean; workRegionId?: string }) => {
       const gen = ++tutorGen.current
       tutorAbort.current?.abort()
+      const helpDeadline = Date.now() + TEACHING_DEADLINE_MS // shared by the reading step and the teaching call
       stopSpeaking()
       const p0 = page()
       const sel = selectedRegionId && p0.regions.some((r) => r.id === selectedRegionId) ? selectedRegionId : null
@@ -514,20 +567,24 @@ export function useNova(o: Options) {
       const interp = { p: pr?.interpretationRevision, c: cr?.interpretationRevision }
       if (extra?.anchorRect) anchorRects.current.set(ctx.requestId, extra.anchorRect)
       if (extra?.speak) speakReplies.current.add(ctx.requestId)
-      await send(payload, gen, interp, problemId)
+      await send(payload, gen, interp, problemId, helpDeadline)
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   )
 
-  const send = async (payload: TutorPayload, gen: number, interp: { p?: number; c?: number }, problemId?: string) => {
+  const send = async (payload: TutorPayload, gen: number, interp: { p?: number; c?: number }, problemId?: string, deadline: number = Date.now() + TEACHING_DEADLINE_MS) => {
     const ctl = new AbortController()
     tutorAbort.current = ctl
     setStatus({ state: 'working', anchorRegionId: payload.context.regionId, message: 'NOVA is thinking…' })
     let res: TutorResult
+    // ONE deadline for the whole help request (reading the line + teaching): the tutor gets only what is left
+    const budget = Math.max(3000, deadline - Date.now())
+    const timer = setTimeout(() => ctl.abort(new DOMException(`NOVA couldn't answer in ${Math.round(TEACHING_DEADLINE_MS / 1000)} s. Your work is safe — try again, or ask a shorter question.`, 'TimeoutError')), budget)
     try {
-      res = await api.tutor(payload, ctl.signal)
+      res = await api.tutor(payload, ctl.signal, budget)
     } catch (e) {
+      clearTimeout(timer)
       if (gen !== tutorGen.current) return
       const f = e instanceof ApiFailure ? e : new ApiFailure('UNKNOWN', 'Something went wrong.', true)
       if (f.code === 'CANCELLED') return
@@ -535,6 +592,7 @@ export function useNova(o: Options) {
       setStatus({ state: f.retryable ? 'error' : 'notice', message: f.message, retryable: f.retryable, retry: f.retryable ? () => void send(payload, (tutorGen.current = tutorGen.current + 1), interp, problemId) : undefined, anchorRegionId: payload.context.regionId })
       return
     }
+    clearTimeout(timer)
     await waitPenUp()
     const p = page()
     const ctx = payload.context
@@ -705,7 +763,25 @@ export function useNova(o: Options) {
     await ask('solve', '', regionId)
   }, [react, ask])
 
-  return { phases, status, setStatus, ask, readNow, contentChanged, cancel, scheduler, solveHere }
+  /** The student answered one of NOVA's own symbol questions: re-read locally with the answer. Resolved → the reading is
+   *  shown for confirmation (not auto-accepted) and the cloud request is cancelled; still unsure → the next question. */
+  const answerLocal = useCallback(async (regionId: string, q: { index: number; question: string; options: string[] }, choice: string) => {
+    const lp = localRef.current[regionId]
+    const p = page(), region = p?.regions.find((r) => r.id === regionId)
+    if (!lp || !p || !region || region.sourceHash !== lp.sourceHash) return
+    const answers: LocalAnswers = { labels: { ...(lp.answers.labels ?? {}) }, oneNumber: [...(lp.answers.oneNumber ?? [])], twoNumbers: [...(lp.answers.twoNumbers ?? [])] }
+    if (q.question.startsWith('Is this one number')) (choice === q.options[0] ? answers.oneNumber! : answers.twoNumbers!).push(q.index)
+    else answers.labels![q.index] = choice
+    const strokes = region.sourceStrokeIds.map((id) => p.strokes.find((s) => s.id === id)?.points).filter((s): s is NonNullable<typeof s> => !!s && s.length > 0)
+    const lr = await readLocally(strokes, answers).catch(() => null)
+    if (!lr) return
+    if (lr.result.status === 'clarify') { setLocalPending((prev) => ({ ...prev, [regionId]: { sourceHash: lp.sourceHash, read: lr.result, answers } })); return }
+    readCtl.current.get(regionId)?.abort(new DOMException('answered by the student', 'AbortError')) // no longer needed
+    setLocalPending((prev) => { const n = { ...prev }; delete n[regionId]; return n })
+    acceptLocal(p.id, regionId, lp.sourceHash, lr.result.literal, 'local-v3g + student', false)
+  }, [])
+
+  return { phases, status, setStatus, ask, readNow, contentChanged, cancel, scheduler, solveHere, localPending, answerLocal }
 }
 
 export function intentLabel(intent: Intent): string {

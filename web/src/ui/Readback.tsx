@@ -1,6 +1,7 @@
 // Screen-space readback labels ("I read …") and the anchored region menu.
 
-import { useState } from 'react'
+import type { LocalResult } from '../recognition/localReader'
+import { useEffect, useState } from 'react'
 import type { View } from '../notebook/ink'
 import { isLargeStroke, isTinyRegion, readingText } from '../notebook/doc'
 import type { Page, Region } from '../notebook/types'
@@ -21,7 +22,10 @@ const CHECK_LABEL: Record<string, string> = {
 interface Props {
   page: Page
   view: View
-  phases: Record<string, { phase: ReadPhase; error?: string }>
+  phases: Record<string, { phase: ReadPhase; error?: string; since?: number }>
+  localPending?: Record<string, { sourceHash: string; read: LocalResult }>
+  onLocalAnswer?: (regionId: string, q: { index: number; question: string; options: string[] }, choice: string) => void
+  onStop?: () => void
   selectedRegionId: string | null
   hoveredRegionId?: string | null // labels show only for the line under the mouse (or the latest line on touch screens)
   onAccept: (regionId: string, text: string) => void
@@ -35,10 +39,24 @@ function screenRect(view: View, r: Region['bounds']) {
   return { x: view.tx + r.x * view.scale, y: view.ty + r.y * view.scale, w: r.w * view.scale, h: r.h * view.scale }
 }
 
-export function ReadbackLayer({ page, view, phases, selectedRegionId, hoveredRegionId, onAccept, onRetry, onSelect, onQuick, showAccepted = true }: Props) {
+function Waiting({ since, onStop, children }: { since?: number; onStop?: () => void; children?: React.ReactNode }) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t) }, [])
+  const secs = since ? Math.round((now - since) / 1000) : 0
+  return (
+    <div className="readback pending" data-testid="reading-pending">
+      {secs >= 8 ? <>Still reading ({secs} s) — keep writing, correct it below, or <button className="link" onClick={onStop}>Stop</button></> : 'Reading…'}
+      {children}
+    </div>
+  )
+}
+
+export function ReadbackLayer({ page, view, phases, selectedRegionId, hoveredRegionId, onAccept, onRetry, onSelect, onQuick, showAccepted = true, localPending = {}, onLocalAnswer, onStop }: Props) {
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
   const [open, setOpen] = useState<string | null>(null) // the line whose help card is open
-  const stop = (e: React.PointerEvent) => e.stopPropagation()
+  // labels sit just under a line, where the next line gets written: only typing fields keep the pen;
+  // everything else lets the workspace decide (plain area → ink at once; a button → tap clicks, drag writes)
+  const passInk = (e: React.PointerEvent) => { if ((e.target as Element).closest('input, textarea, select')) e.stopPropagation() }
   const canHover = typeof window !== 'undefined' && window.matchMedia?.('(hover: hover)').matches
   const lastStroke = page.strokes[page.strokes.length - 1]
   // phones can't hover: the latest line keeps its row only until NOVA has answered it
@@ -75,11 +93,25 @@ export function ReadbackLayer({ page, view, phases, selectedRegionId, hoveredReg
               </form>
             )
           }
-          if (phase?.phase === 'recognizing') return <div className="readback pending">Reading…</div>
+          const lp = localPending[region.id]?.sourceHash === region.sourceHash ? localPending[region.id].read : null
+          const localQs = lp && lp.status === 'clarify' && lp.clarify.length ? (
+            <div className="rb-local" data-testid="local-questions">
+              <span className="muted">I read <span className="mono">{lp.literal}</span></span>
+              {lp.clarify.slice(0, 2).map((q) => (
+                <div key={q.index + q.question} className="rb-q">
+                  <span>{q.question.startsWith('Is this one number') ? q.question : `Symbol ${q.index + 1}: ${q.question}`}</span>
+                  {q.options.map((o) => <button key={o} className="chip mono" data-testid="local-option" onClick={() => onLocalAnswer?.(region.id, q, o)}>{o}</button>)}
+                </div>
+              ))}
+            </div>
+          ) : null
+          if (phase?.phase === 'recognizing') return <Waiting since={phases[region.id]?.since} onStop={onStop}>{localQs}</Waiting>
           if (phase?.phase === 'failed')
             return (
               <div className="readback failed">
                 {phase.error && /busy|took too long|read this line in|time/i.test(phase.error) ? phase.error : phase.error && /could not reach|cannot reach/i.test(phase.error) ? "Couldn't reach the reading service. Your ink is safe." : "Couldn't read this line."} <button className="link" onClick={() => onRetry(region.id)}>Retry</button>
+                {reading?.state === 'readback_ready' && reading.rawText && <span> · NOVA's own reading: <span className="mono">{reading.rawText}</span> <button className="link strong" onClick={() => onAccept(region.id, reading.rawText)}>Use it</button> <button className="link" onClick={() => setEditing({ id: region.id, text: reading.rawText })}>Edit</button></span>}
+                {localQs}
               </div>
             )
           if (!reading) return null
@@ -154,7 +186,7 @@ export function ReadbackLayer({ page, view, phases, selectedRegionId, hoveredReg
               </div>
             )}
             {label && (
-              <div className={`readback-anchor ${open === region.id ? 'open' : ''}`} style={{ left: Math.max(s.x, view.tx + 4, 4), top }} onPointerDown={stop} onClick={() => open !== region.id && !reading?.state?.startsWith('accepted') && onSelect(region.id)}>
+              <div className={`readback-anchor ${open === region.id ? 'open' : ''}`} data-pass-ink style={{ left: Math.max(s.x, view.tx + 4, 4), top }} onPointerDown={passInk} onClick={() => open !== region.id && !reading?.state?.startsWith('accepted') && onSelect(region.id)}>
                 {label}
               </div>
             )}

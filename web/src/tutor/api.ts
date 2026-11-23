@@ -115,6 +115,11 @@ const json = (body: unknown, budgetMs?: number): RequestInit => ({
 
 /** One interactive attempt (write a line → its reading and NOVA's answer), end to end. The server may override it. */
 export let INTERACTIVE_DEADLINE_MS = 30_000
+/** One help request (read the line if needed + teach), end to end. The server may override it. */
+export let TEACHING_DEADLINE_MS = 45_000
+export function setTeachingDeadline(ms: number | undefined) {
+  if (ms && ms >= 10_000 && ms <= 600_000) TEACHING_DEADLINE_MS = ms
+}
 export function setInteractiveDeadline(ms: number | undefined) {
   if (ms && ms >= 5_000 && ms <= 600_000) INTERACTIVE_DEADLINE_MS = ms
 }
@@ -169,7 +174,7 @@ export const api = {
   testConnection: (vision: boolean) => call<Record<string, unknown>>('/api/v1/connection/test', json({ vision })),
   recognize: (body: { context: RequestContext; regionPng: string; regionWidth: number; regionHeight: number }, signal?: AbortSignal, budgetMs?: number) =>
     call<RecognizeResult>('/api/v1/recognize', json(body, budgetMs), signal),
-  tutor: (body: TutorPayload, signal?: AbortSignal) => call<TutorResult>('/api/v1/tutor', json(body), signal),
+  tutor: (body: TutorPayload, signal?: AbortSignal, budgetMs?: number) => call<TutorResult>('/api/v1/tutor', json(body, budgetMs), signal),
   check: (body: { context: RequestContext; problem: string; current: string; confirmed: boolean }) =>
     call<{ status: CheckResult['status']; message: string; problemSolution?: string; currentSolution?: string; context: RequestContext }>('/api/v1/check', json(body)),
   plot: (body: { context: RequestContext; expression: string }) => call<{ plot: PlotData; context: RequestContext }>('/api/v1/plot', json(body)),

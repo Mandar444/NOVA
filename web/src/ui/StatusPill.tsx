@@ -50,7 +50,7 @@ export function StatusPill({ status, onStop, onDismiss, onIdleClick, compact, ch
       <div data-testid="nova-status" className={`ob-pill working ${compact ? 'compact' : ''}`} role="status" aria-live="polite">
         <span className="ob-pill-mark" aria-hidden="true"><Icon.ask /></span>
         <span className="ob-pill-body">
-          <span className="ob-pill-text">{status.message || 'Working…'}</span>
+          <span className="ob-pill-text">{secs >= 8 ? 'Still working — keep writing, or Stop' : status.message || 'Working…'}</span>
           {!compact && <span className="ob-pill-track" aria-hidden="true"><span style={{ width: `${Math.min(95, 8 + secs * 3)}%` }} /></span>}
         </span>
         {secs >= 2 && <span className="ob-pill-secs">{secs} s</span>}

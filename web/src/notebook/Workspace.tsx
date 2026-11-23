@@ -32,6 +32,8 @@ interface Props {
 
 type Gesture =
   | { kind: 'draw'; pointerId: number; points: Point[] }
+  // pen-down on a NOVA chip/button lying in the writing area: a tap clicks it, a drag becomes ink
+  | { kind: 'tap-or-draw'; pointerId: number; x: number; y: number; start: Point }
   | { kind: 'erase'; pointerId: number; ids: Set<string> }
   | { kind: 'select'; pointerId: number; start: Point; path: Point[] }
   | { kind: 'pan'; pointerId: number; lastX: number; lastY: number }
@@ -174,6 +176,12 @@ export function Workspace(p: Props) {
       gesture.current = { kind: 'pan', pointerId: e.pointerId, lastX: pt.x, lastY: pt.y }
       return
     }
+    // NOVA's labels never block writing: plain label areas take ink at once; their buttons wait to see tap vs stroke
+    const overlay = (e.target as Element).closest?.('[data-pass-ink]')
+    if (overlay && (e.target as Element).closest('button, a, [role=button]')) {
+      if (tool === 'pen') gesture.current = { kind: 'tap-or-draw', pointerId: e.pointerId, x: pt.x, y: pt.y, start: { ...pagePt, pressure: e.pointerType === 'pen' ? e.pressure : undefined } }
+      return
+    }
     if (tool === 'pen') {
       props.current.onPenDown()
       gesture.current = { kind: 'draw', pointerId: e.pointerId, points: [{ ...pagePt, pressure: e.pointerType === 'pen' ? e.pressure : undefined }] }
@@ -207,9 +215,19 @@ export function Workspace(p: Props) {
     if (!pointers.current.has(e.pointerId)) return
     const pt = local(e)
     pointers.current.set(e.pointerId, { ...pt, type: e.pointerType })
-    const g = gesture.current
+    let g = gesture.current
     if (!g) return
     const { view } = props.current
+    if (g.kind === 'tap-or-draw') {
+      if (g.pointerId !== e.pointerId || Math.hypot(pt.x - g.x, pt.y - g.y) < 6) return
+      // it is writing: start the stroke where the pen went down, and swallow the click the button would get at pen-up
+      const kill = (ev: Event) => { ev.stopPropagation(); ev.preventDefault() }
+      window.addEventListener('click', kill, { capture: true, once: true })
+      setTimeout(() => window.removeEventListener('click', kill, { capture: true }), 60_000)
+      props.current.onPenDown()
+      g = gesture.current = { kind: 'draw', pointerId: e.pointerId, points: [g.start] }
+      drawStroke(liveCtx(), { points: g.points, colour: props.current.colour, width: props.current.width })
+    }
     if (g.kind === 'pinch') {
       const a = pointers.current.get(g.ids[0]), b = pointers.current.get(g.ids[1])
       if (!a || !b) return
@@ -278,6 +296,7 @@ export function Workspace(p: Props) {
     pointers.current.delete(e.pointerId)
     const g = gesture.current
     if (!g) return
+    if (g.kind === 'tap-or-draw') { gesture.current = null; return } // a tap: the button's own click runs
     if (g.kind === 'pinch') {
       if (pointers.current.size === 0) gesture.current = null
       else if (!g.ids.includes(e.pointerId)) return

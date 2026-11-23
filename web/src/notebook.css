@@ -125,3 +125,12 @@
 .ask-badge { background: var(--nv-surface-2); border: 1px solid var(--nv-line); }
 .ask-badge img { width: 24px; height: 24px; object-fit: contain; }
 :root[data-theme="dark"] .ask-badge { background: #fff; }
+
+/* local reader: NOVA's own symbol questions while the line is being read (compact; under the line, never over new ink) */
+.readback .rb-local { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; max-width: 320px; }
+.readback .rb-local .mono { font-family: ui-monospace, Consolas, monospace; }
+.readback .rb-q { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.readback .rb-q > span { font-size: 12px; color: var(--ink-2, #555); margin-right: 2px; }
+
+/* instant rule-based hint beside a wrong mark: one short line, never over the student's work */
+.ink-hint { position: absolute; z-index: 6; max-width: 240px; padding: 3px 8px; border-radius: 8px; font-size: 12px; line-height: 1.3; background: var(--surface, #fff); color: var(--ink, #222); border: 1px solid rgba(180, 55, 47, .35); box-shadow: 0 1px 4px rgba(0,0,0,.08); pointer-events: none; }

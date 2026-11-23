@@ -55,6 +55,7 @@ async def capabilities() -> Capabilities:
             "maxActions": MAX_ACTIONS, "maxAudioBytes": MAX_AUDIO_BYTES, "maxAudioSeconds": MAX_AUDIO_SECONDS,
             "providerTimeoutS": settings.provider_timeout_s,
             "interactiveDeadlineMs": settings.interactive_deadline_s * 1000,
+            "teachingDeadlineMs": settings.teaching_deadline_s * 1000,
         },
         provider={
             "name": "BharatCode",

@@ -168,7 +168,7 @@ export function TutorLayer({ page, regionBounds, speechEnabled, onDismiss, onPla
         const a = t.action
         if (a.type === 'write_ink') {
           if (t.id.endsWith(':why')) return null // the step notes belong to the solution; it carries the tag
-          return (
+          const tag = (
             <button key={t.id} className={`ink-tag tone-${a.tone} ${t.status}`} style={a.purpose === 'completion' && a.text.includes('\n')
               ? { left: t.layout.x - 6, top: t.layout.y - 22 } // a worked solution: tag its top-left corner, clear of the notes beside it
               : { left: t.layout.x + t.layout.w + 6, top: t.layout.y + Math.max(0, t.layout.h / 2 - 11) }}
@@ -176,6 +176,14 @@ export function TutorLayer({ page, regionBounds, speechEnabled, onDismiss, onPla
               NOVA
             </button>
           )
+          // a wrong mark carries the engine's instant rule-based hint: one short line beside the ✗, never over the work
+          const hint = a.purpose === 'mark' && a.tone === 'wrong' && t.caption && t.status === 'active' ? t.caption : null
+          return hint ? (
+            <span key={t.id}>
+              {tag}
+              <div className="ink-hint" data-testid="ink-hint" style={{ left: t.layout.x + t.layout.w + 56, top: t.layout.y + Math.max(0, t.layout.h / 2 - 11) }}>{hint}</div>
+            </span>
+          ) : tag
         }
         if (a.type === 'highlight_region') {
           return a.reason && !a.subtle ? (

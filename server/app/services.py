@@ -16,6 +16,7 @@ from .config import MAX_ACTIONS, MAX_EQUATION_CHARS, MAX_NOTE_CHARS, MAX_SPEAK_C
 from .errors import ApiError
 from .images import decode_png
 from .maths.arith import check_arith, looks_arithmetic
+from .maths.hints import arith_hint
 from .maths.graph import graph
 from .maths.linear import MathError, check_step, fmt, is_isolated, parse_equation, solution_set
 from .maths.solve import SolveError, run as solve_run, tokenize as solve_tokenize, verify_content
@@ -1018,13 +1019,18 @@ async def _auto_exact(text: str, problem: str | None, auto_answer: bool) -> dict
         r = await asyncio.to_thread(solve_run, t, "finish")
         if r.status == "answered" and r.answer:
             return {"kind": "answer", "answer": r.answer, "message": "Worked out exactly by NOVA."}
+        if r.message and "division by zero" in r.message.lower():
+            return {"kind": "answer", "answer": "undefined", "message": "Division by zero is undefined."}  # explicit, not silent
         return {"kind": "none", "message": r.message}
     if "=" not in t:
         return {"kind": "none"}
     if looks_arithmetic(t):
         a = check_arith(t)
         if a.status in ("correct", "incorrect"):
-            return {"kind": "mark", "verdict": a.status, "message": a.message if a.status == "correct" else "This answer isn't right yet."}
+            # wrong: an instant rule-based hint (no model; never the answer itself)
+            return {"kind": "mark", "verdict": a.status, "message": a.message if a.status == "correct" else f"Not right yet. {arith_hint(t)}"}
+        if a.message and "division by zero" in a.message.lower():
+            return {"kind": "mark", "verdict": "incorrect", "message": "Division by zero is undefined, so this can't equal a number."}
         return {"kind": "none", "message": a.message}
     # a working step under an equation problem: same solutions?
     if problem and _shape_eq(problem) != _shape_eq(t):

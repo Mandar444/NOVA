@@ -854,6 +854,9 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
                 showAccepted={settings.showReadback !== false}
                 onAccept={(id, text) => dispatch({ type: 'acceptReading', pageId, regionId: id, text })}
                 onRetry={(id) => void nova.readNow(id).catch((e) => toast((e as Error).message))}
+                localPending={nova.localPending}
+                onLocalAnswer={(id, q, o) => void nova.answerLocal(id, q, o)}
+                onStop={nova.cancel}
                 onSelect={setSelected}
                 onQuick={(id, intent) => {
                   if (intent === 'ask') {

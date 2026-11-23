@@ -1,6 +1,19 @@
 # NOVA — build state
 
-_Last updated: 2026-11-18_
+_Last updated: 2026-11-24_
+
+## Hybrid handwriting + teaching (2026-11-24, branch `hybrid-reader` from `perf-latency` @ 9853a59; local only, not deployed)
+- **Route per line:** pen-up → (existing debounce) → NOVA's own reader in a Web Worker (`web/public/reader/`, model v3g: 90,711-param CNN, ~363 KB, loaded once, ~10–50 ms warm). A line that passes the reliability gate (confident, no question/guard, every symbol p ≥ 0.9, only digits + − × =, sane sizes/grouping) goes straight to the exact engine. Anything else → BharatCode reads the ink crop as before. Both paths feed the same `/auto` engine.
+- **Uncertain lines:** the local reader's own symbol questions (1 vs /, "something else", "two numbers") show under the line while the cloud reads; answering them re-reads locally and offers the reading to confirm (never auto-acted). Cloud failure/offline → "NOVA's own reading: … Use it / Edit" + Retry; ink is never lost.
+- **Cross-check:** if the local reader saw a decimal point/comma the cloud reading lacks, or the cloud reading has a leading-zero number ("05"), the line is shown for confirmation instead of being answered (the reading is not rewritten).
+- **Writing area:** reading chips/panels no longer swallow pen-down: plain label areas take ink, buttons distinguish tap vs drag (`data-pass-ink`, Workspace `tap-or-draw`). This fixed strokes that started on a chip silently disappearing (seen with the real provider: "91 − 23" lost its 9 and 3 → answered −1).
+- **Engine:** both sides of "=" checked (2×2=2+2 ✓, 2×2=2+3 ✗); "0/0=" → "undefined" written explicitly; wrong marks carry an instant rule-based hint (`server/app/maths/hints.py`, never reveals the answer) shown beside the ✗.
+- **Waiting:** 8 s "Still reading — keep writing, correct it below, or Stop"; 30 s per-line deadline; 45 s shared deadline for one help request (`NOVA_TEACHING_DEADLINE_S`, exposed in capabilities).
+- **Feature flag / rollback:** `?localReader=0` or `localStorage['nova.localReader']='off'` → cloud-only (previous behaviour). Full rollback: check out `perf-latency`.
+- **Training:** one capped run (v4, 7 epochs/1168 s) failed the gate (original synthetic exact 269 < 283, answered 179 < 206; 2 wrong-before on targeted lines) → **v3g kept**. Report: `LLM_data/hwprep/STAGE1_V4_RESULTS.md`.
+- **Licence:** v3g weights include MathWriting (CC BY-NC-SA) → non-commercial use only until retrained on cleared data.
+- **Verified** (browser journeys, `scratchpad/qa/hybrid_journey.cjs`): real BharatCode — 15/15 lines correct or asked, 0 wrong automatic outputs, 8 lines local (pen-up→checked ≈ 2.1 s, i.e. the debounce), cloud lines 4.8–11.5 s; teaching replies 4–9 s. Simulated provider (mocked): busy→Retry, slow→8 s message→Stop, edit during read (superseded request aborted), page switch, offline, reload (145/145 strokes), progressive PDF (page 1 writable at 2.5 s while analysis still running), mobile *emulation* 390×844. Not verified: real phone/tablet, real pen hardware, cold load on a slow network.
+- **Known limitation:** "I still don't understand" without a selected line follows the page's latest line, not the previous hint's topic.
 
 ## Handwriting latency incident (2026-11-23, branch `perf-latency` from `ui-orbit` @ 344b989; local only, not deployed)
 "3 + 2 =" took ~220 s. Traced one line from last pen-up to NOVA's answer (client `nova-trace` marks + server `X-Nova-Timing`).
