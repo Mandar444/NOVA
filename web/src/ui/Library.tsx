@@ -127,82 +127,101 @@ export function Library({ tester, onSwitchTester, onOpen, onCreate, onImportPape
     if (sort === 'oldest') return [...list].sort((a, b) => a.updatedAt - b.updatedAt)
     return list
   }, [items, docs, query, sort])
-  const goalMin = 30
-  const minutesLeft = Math.max(0, goalMin - prog.today.minutes)
+  const now = new Date()
+  const hour = now.getHours()
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
+  const today = now.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' })
+  const [menu, setMenu] = useState(false)
 
   return (
-    <div className="library home">
-      <header className="topbar">
+    <div className="library home ob-home" onPointerDown={() => menu && setMenu(false)}>
+      <header className="ob-home-bar">
         <img className="brand-logo" src="/nova-logo.png" alt="NOVA" />
-        <span className="title-static">Math Notebooks</span>
         <span className="spacer" />
-        {tester && (
-          <span className="tester-chip">
-            {tester.name}
-            <button className="link" onClick={() => { if (confirm('Switch to another tester? Your notebooks stay saved under your name on this device.')) onSwitchTester?.() }}>switch</button>
-          </span>
-        )}
-        <button className="icon-btn" aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} title={theme === 'dark' ? 'Light mode' : 'Dark mode'} onClick={() => setThemePref(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Icon.sun /> : <Icon.moon />}</button>
-        <button className="btn hide-phone" onClick={() => fileRef.current?.click()}>Restore backup</button>
-        <button className="btn primary" onClick={onCreate}><Icon.plus /> <span className="hide-phone">New notebook</span></button>
+        <label className="ob-search hide-phone">
+          <Icon.search />
+          <input type="search" placeholder="Search notebooks" aria-label="Search notebooks" value={query} onChange={(e) => setQuery(e.target.value)} />
+        </label>
+        <button className="ob-icon" aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} title={theme === 'dark' ? 'Light mode' : 'Dark mode'} onClick={() => setThemePref(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Icon.sun /> : <Icon.moon />}</button>
+        <div className="anchor-rel">
+          <button className="ob-icon" aria-label="More" onClick={(e) => { e.stopPropagation(); setMenu((v) => !v) }}><Icon.more /></button>
+          {menu && (
+            <div className="popover menu ob-home-menu" onPointerDown={(e) => e.stopPropagation()}>
+              <button className="menu-item" onClick={() => { fileRef.current?.click(); setMenu(false) }}>Restore a backup…</button>
+              {tester && <button className="menu-item" onClick={() => { setMenu(false); if (confirm('Switch to another tester? Your notebooks stay saved under your name on this device.')) onSwitchTester?.() }}>Switch tester</button>}
+            </div>
+          )}
+        </div>
+        {tester && <span className="ob-avatar" title={tester.name} aria-label={`Signed in as ${tester.name}`}>{tester.name.trim().charAt(0).toUpperCase() || '·'}</span>}
         <input ref={fileRef} type="file" accept=".json,.nova.json,application/json" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void importBackup(f) }} />
         <input ref={pdfRef} type="file" accept="application/pdf,.pdf" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onImportPaper(f) }} />
       </header>
-      <main className="library-main">
+      <main className="library-main ob-home-main">
+        <div className="ob-greet">
+          <span className="ob-date">{today}</span>
+          <h1>{greeting}{tester ? `, ${tester.name.trim().split(/\s+/)[0]}` : ''}.</h1>
+        </div>
         {items === null && <p className="muted">Loading…</p>}
 
-        {latest && (
-          <section className="hero">
-            <button className="hero-sheet" onClick={() => onOpen(latest.id)} aria-label={`Continue ${latest.title}`}>
-              <PageThumb page={pageOf(latestDoc)} aspect={4 / 3} />
-            </button>
-            <div className="hero-body">
-              <div className="lc-kicker">Continue where you left off</div>
-              <h1 className="hero-title">{latest.title}</h1>
-              <div className="hero-meta">
-                {latest.pageCount} {latest.pageCount === 1 ? 'page' : 'pages'} · edited {when(latest.updatedAt)}
+        <div className="ob-home-top">
+          {latest ? (
+            <section className="ob-continue">
+              <button className="ob-continue-sheet" onClick={() => onOpen(latest.id)} aria-label={`Continue ${latest.title}`}>
+                <PageThumb page={pageOf(latestDoc)} aspect={3 / 4} />
+              </button>
+              <div className="ob-continue-body">
+                <span className="ob-kicker">Continue where you left off</span>
+                <h2>{latest.title}</h2>
+                <span className="ob-meta">{latest.pageCount} {latest.pageCount === 1 ? 'page' : 'pages'} · edited {when(latest.updatedAt)}</span>
+                {lines.length > 0 && (
+                  <ul className="ob-lines">
+                    {lines.map((l, i) => <li key={i}>{l}</li>)}
+                  </ul>
+                )}
+                <div className="ob-facts">
+                  <span><b>{st.lines}</b> lines</span>
+                  {st.right > 0 && <span className="ok"><b>{st.right}</b> right</span>}
+                  {st.wrong > 0 && <span className="bad"><b>{st.wrong}</b> to fix</span>}
+                  {latestTest?.score && <span><b>{latestTest.score.correct}/{latestTest.score.total}</b> on the test</span>}
+                </div>
+                <div className="ob-continue-foot">
+                  <button className="btn primary" onClick={() => onOpen(latest.id)}><Icon.pen /> Continue writing</button>
+                  {prog.lastTopic && <button className="btn" onClick={() => onPractice(prog.lastTopic!)}>Practise {prog.lastTopic}</button>}
+                </div>
               </div>
-              {lines.length > 0 && (
-                <ul className="hero-lines">
-                  {lines.map((l, i) => <li key={i}>{l}</li>)}
-                </ul>
-              )}
-              <div className="hero-chips">
-                <span><b>{st.lines}</b> lines written</span>
-                {st.right > 0 && <span className="ok"><b>{st.right}</b> ✓ right</span>}
-                {st.wrong > 0 && <span className="bad"><b>{st.wrong}</b> ✗ to fix</span>}
-                {latestTest?.score && <span><b>{latestTest.score.correct}/{latestTest.score.total}</b> on the test</span>}
-              </div>
-              <div className="hero-foot">
-                <button className="btn primary big" onClick={() => onOpen(latest.id)}><Icon.pen /> Continue writing</button>
-                <span className={`hero-streak ${prog.streak ? 'hot' : ''}`}><Icon.flame /> {prog.streak ? `${prog.streak}-Day Streak!` : 'Start a streak today'}</span>
-                <span className="spacer" />
-                <button className="hero-stat" onClick={() => (prog.lastTopic ? onPractice(prog.lastTopic) : setPracticeOpen(true))} title={prog.lastTopic ? `Practise ${prog.lastTopic}` : 'Start a practice set'}>
-                  <small>Last topic</small>
-                  <b>{prog.lastTopic ?? 'Nothing yet'}</b>
-                </button>
-                <span className="hero-stat" title={`Daily goal: ${goalMin} minutes of writing. ${prog.today.minutes} done today.`}>
-                  <small>Today's goal</small>
-                  <b>{minutesLeft ? `${minutesLeft} min left` : 'Done'}</b>
-                </span>
-              </div>
+            </section>
+          ) : (
+            items !== null && (
+              <section className="ob-continue empty">
+                <div className="ob-continue-body">
+                  <span className="ob-kicker">Your first notebook</span>
+                  <h2>Write maths by hand. NOVA reads it and helps.</h2>
+                  <div className="ob-continue-foot"><button className="btn primary" onClick={onCreate}><Icon.plus /> New notebook</button></div>
+                </div>
+              </section>
+            )
+          )}
+          <div className="ob-tiles">
+            <button className="ob-tile" onClick={onCreate}><span className="ob-tile-icon accent"><Icon.plus /></span><b>New notebook</b><span>Blank squared page</span></button>
+            <button className="ob-tile" onClick={() => pdfRef.current?.click()}><span className="ob-tile-icon"><Icon.upload /></span><b>Import question paper</b><span>PDF, with answer space beside each question</span></button>
+            <button className="ob-tile" onClick={() => setPracticeOpen(true)}><span className="ob-tile-icon warm"><Icon.target /></span><b>Practice sets</b><span>Questions NOVA writes and marks</span></button>
+            <div className="ob-try">
+              Try: <button className="link" onClick={() => onTry('graph')}>graph a function</button> · <button className="link" onClick={() => onTry('diagram')}>read a diagram</button> · <button className="link" onClick={() => onTry('ask')}>simplify an expression</button>
             </div>
-          </section>
-        )}
+          </div>
+        </div>
 
-        <section className="lib-section">
-          <div className="shelf-head">
-            <h2>Notebooks</h2>
-            {items && items.length > 0 && <span className="muted">{items.length}</span>}
-            <button className="btn primary" onClick={onCreate}><Icon.plus /> New Notebook</button>
-            <button className="btn" onClick={() => pdfRef.current?.click()}><Icon.upload /> Import (PDF)</button>
+        <section className="lib-section ob-shelf">
+          <div className="ob-shelf-head">
+            <h2>Your notebooks</h2>
+            {items && items.length > 0 && <span className="ob-count">{items.length}</span>}
             <span className="spacer" />
-            <label className="lib-search">
-              <input type="search" placeholder="Search notebooks" aria-label="Search notebooks" value={query} onChange={(e) => setQuery(e.target.value)} />
+            <label className="ob-search show-phone">
               <Icon.search />
+              <input type="search" placeholder="Search" aria-label="Search notebooks" value={query} onChange={(e) => setQuery(e.target.value)} />
             </label>
-            <label className="lib-sort" title="Sort notebooks">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 5h16l-6 7.5V19l-4-2v-4.5L4 5z" /></svg>
+            <label className="ob-sort">
+              <span className="sr-only">Sort notebooks</span>
               <select value={sort} aria-label="Sort notebooks" onChange={(e) => setSort(e.target.value as typeof sort)}>
                 <option value="recent">Recent</option>
                 <option value="oldest">Oldest</option>
@@ -211,50 +230,37 @@ export function Library({ tester, onSwitchTester, onOpen, onCreate, onImportPape
             </label>
           </div>
           {weak.length > 0 && (
-            <div className="weak-row">
-              <span className="muted">Needs practice:</span>
+            <div className="ob-weak">
+              <span>Needs practice</span>
               {weak.slice(0, 4).map((t) => (
-                <button key={t.topic} className="topic-chip weak" onClick={() => onPractice(t.topic)} title={`Practise ${t.topic}`}>
-                  {t.topic}<em>{Math.round((t.right / (t.right + t.wrong)) * 100)}%</em>
+                <button key={t.topic} className="chip" onClick={() => onPractice(t.topic)} title={`Practise ${t.topic}`}>
+                  {t.topic} · {Math.round((t.right / (t.right + t.wrong)) * 100)}%
                 </button>
               ))}
             </div>
           )}
           {items && items.length > 0 && shown.length === 0 && <p className="muted">No notebooks match “{query}”.</p>}
-          <div className="cover-grid">
+          <div className="ob-grid">
             {shown.map((n) => {
               const d = docs[n.id]
               const badge = coverBadge(d)
-              const Art = COVER_ART[coverArt(d, n.id)]
               return (
-                <div key={n.id} className="cover-card" style={coverStyle(n.id)}>
-                  <button className="cover-open" onClick={() => onOpen(n.id)}>
-                    <span className="cover-art"><Art /></span>
-                    <span className="cover-info">
-                      <span className="cover-title">{n.title}</span>
-                      <span className="cover-meta">{n.pageCount} {n.pageCount === 1 ? 'page' : 'pages'}</span>
-                      <span className="cover-meta">
-                        Edited: {when(n.updatedAt)}
-                        {badge && <span className={`cover-badge ${badge.kind}`}>{badge.text}</span>}
-                      </span>
+                <div key={n.id} className="ob-card">
+                  <button className="ob-card-open" onClick={() => onOpen(n.id)} aria-label={`Open ${n.title}`}>
+                    <span className="ob-card-sheet"><PageThumb page={pageOf(d)} aspect={3 / 4} /></span>
+                    <span className="ob-card-info">
+                      <b>{n.title}</b>
+                      <span>{n.pageCount} {n.pageCount === 1 ? 'page' : 'pages'} · {when(n.updatedAt)}{badge && badge.kind !== 'draft' ? ` · ${badge.text}` : ''}</span>
                     </span>
                   </button>
-                  <button className="icon-btn sm nb-del" aria-label={`Delete ${n.title}`} onClick={() => void remove(n)}><Icon.trash /></button>
+                  <button className="ob-card-del" aria-label={`Delete ${n.title}`} onClick={() => void remove(n)}><Icon.trash /></button>
                 </div>
               )
             })}
           </div>
         </section>
+        <footer className="library-foot">NOVA keeps your notebooks on this device.</footer>
       </main>
-
-      <nav className="try-dock" aria-label="Try this">
-        <button onClick={() => onTry('graph')}><Icon.graph /> Graph Function</button>
-        <button onClick={() => onTry('diagram')}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true"><path d="M4 20L12 4l8 16H4z" /></svg> Read Diagram</button>
-        <button onClick={() => onTry('ask')}><Icon.ask /> Simplify Expression</button>
-        <button onClick={() => pdfRef.current?.click()}><Icon.check /> Test Mode</button>
-        <button onClick={() => setPracticeOpen(true)}><Icon.target /> Practice</button>
-      </nav>
-      <footer className="library-foot muted">NOVA stores notebooks on this device only.</footer>
       {practiceOpen && (
         <PracticeDialog suggested={weak.map((t) => t.topic)} onStart={(p) => { setPracticeOpen(false); if (p.topic) onPractice(p.topic) }} onClose={() => setPracticeOpen(false)} />
       )}
@@ -263,17 +269,6 @@ export function Library({ tester, onSwitchTester, onOpen, onCreate, onImportPape
 }
 
 // ------------------------------------------------------------------ notebook covers
-
-/** Each notebook gets its own cover colour, stable from its id. */
-const COVERS = ['#3fa66a', '#2fa39a', '#3f7fd6', '#7a63d8', '#d9a326', '#d8637f']
-function hashOf(id: string): number {
-  let h = 0
-  for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0
-  return h
-}
-function coverStyle(id: string): React.CSSProperties {
-  return { '--cover': COVERS[hashOf(id) % COVERS.length] } as React.CSSProperties
-}
 
 /** What the notebook's status is, said honestly: a test score, how much NOVA marked right, or a draft. */
 function coverBadge(doc?: NotebookDoc): { text: string; kind: 'good' | 'mid' | 'draft' } | null {
@@ -287,55 +282,4 @@ function coverBadge(doc?: NotebookDoc): { text: string; kind: 'good' | 'mid' | '
   }
   if (s.lines < 3) return { text: 'Draft', kind: 'draft' }
   return null
-}
-
-type Art = 'spiral' | 'radar' | 'matrix' | 'board' | 'notepad' | 'triangle' | 'wave'
-function coverArt(doc: NotebookDoc | undefined, id: string): Art {
-  const topic = notebookTopics(doc, 1)[0]
-  if (topic === 'Calculus') return 'spiral'
-  if (topic === 'Matrices & vectors') return 'matrix'
-  if (topic === 'Trigonometry') return 'wave'
-  if (topic === 'Geometry') return 'triangle'
-  if (topic === 'Algebra' || topic === 'Linear equations' || topic === 'Quadratics') return 'board'
-  if (topic === 'Arithmetic' || topic === 'Fractions & decimals') return 'notepad'
-  if (topic) return 'radar'
-  return (['notepad', 'spiral', 'radar'] as Art[])[hashOf(id) % 3] // nothing read yet
-}
-
-function A({ children }: { children: React.ReactNode }) {
-  return (
-    <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      {children}
-    </svg>
-  )
-}
-const SPIRAL = (() => {
-  const pts: string[] = []
-  for (let i = 0; i <= 90; i++) {
-    const a = (i / 90) * Math.PI * 5.5
-    const r = 2.5 + (i / 90) * 16
-    pts.push(`${(24 + r * Math.cos(a)).toFixed(1)} ${(24 + r * Math.sin(a)).toFixed(1)}`)
-  }
-  return 'M' + pts.join('L')
-})()
-const WAVE = (() => {
-  const pts: string[] = []
-  for (let i = 0; i <= 40; i++) pts.push(`${(6 + i * 0.9).toFixed(1)} ${(24 - 11 * Math.sin((i / 40) * Math.PI * 2)).toFixed(1)}`)
-  return 'M' + pts.join('L')
-})()
-const COVER_ART: Record<Art, () => React.ReactNode> = {
-  spiral: () => <A><path d={SPIRAL} /></A>,
-  radar: () => <A><circle cx="24" cy="24" r="2" fill="currentColor" /><path d="M24 17a7 7 0 1 0 7 7" /><path d="M24 10.5a13.500 13.500 0 1 0 13.500 13.500" /><path d="M24 4.500a19.500 19.500 0 1 0 19.500 19.500" strokeDasharray="5 6" /></A>,
-  matrix: () => (
-    <A>
-      <path d="M13 7H8v34h5M35 7h5v34h-5" />
-      {[0, 1, 2].map((r) => [0, 1, 2].map((c) => ((r + c) % 3 === 2 && r !== 1
-        ? <ellipse key={`${r}${c}`} cx={16.5 + c * 7.5} cy={15 + r * 9} rx="2" ry="3" strokeWidth={2} />
-        : <path key={`${r}${c}`} d={`M${16.5 + c * 7.5} ${12 + r * 9}v6`} />)))}
-    </A>
-  ),
-  board: () => <A><rect x="6" y="8" width="36" height="24" rx="2.500" /><path d="M24 32v4M16 42l8-6 8 6" /><path d="M15 16c-2.500 0-3 2-3 4v6M10.500 20.500h4" /><path d="M20 16c-2 2.500-2 6.500 0 9M24 18l4 5M28 18l-4 5M32 16c2 2.500 2 6.500 0 9" strokeWidth={2} /></A>,
-  notepad: () => <A><rect x="9" y="8" width="26" height="33" rx="2.500" /><path d="M15 5v6M22 5v6M29 5v6" /><path d="M15 20h14M15 27h9" /><path d="M41 17l-13 13-1.500 5.500 5.500-1.500 13-13a2.800 2.800 0 0 0-4-4z" fill="var(--cover-bg, none)" /></A>,
-  triangle: () => <A><path d="M7 39L30 9l11 30H7z" /><path d="M13 39v-6h-1.500" strokeWidth={2} /><path d="M33.500 39a6 6 0 0 0-2-5" strokeWidth={2} /></A>,
-  wave: () => <A><path d="M6 24h36" strokeWidth={1.600} strokeDasharray="2 4" /><path d={WAVE} /></A>,
 }
