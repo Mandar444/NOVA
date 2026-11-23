@@ -39,6 +39,12 @@ const QUICK_LINE: { label: string; intent: Intent; q: string; tone: string }[] =
   { label: 'Check', intent: 'check', q: '', tone: '' },
 ]
 const QUICK_PAGE: string[] = ['Add a trigonometry table', 'Write the algebraic identities', 'Explain what I did on this page', 'Give me a similar question to practise']
+// no line selected: the same three kinds of help, about the problem on the page
+const HELP_PAGE: { label: string; q: string; tone: string }[] = [
+  { label: 'Hint', q: 'Give me a hint for this, not the answer.', tone: 'hint' },
+  { label: 'Explain', q: 'Explain the idea behind this.', tone: 'explain' },
+  { label: 'Full solution', q: 'Show me the full worked solution.', tone: 'solution' },
+]
 
 export function AskPanel({ docked, startWithMic, initialText, turns, status, about, onClearAbout, onSend, onClose, offsetRight, onStop, onShow }: Props) {
   const [text, setText] = useState(initialText ?? '')
@@ -217,6 +223,9 @@ export function AskPanel({ docked, startWithMic, initialText, turns, status, abo
         {shown.length === 0 && !busy && (
           <div className="thread-empty">
             <p>Ask anything — about a line you select, or about maths in general. NOVA can also write tables and formulas onto your page.</p>
+            <div className="thread-try">
+              {QUICK_PAGE.map((q) => <button key={q} onClick={() => send('ask', q)}>{q}</button>)}
+            </div>
           </div>
         )}
         {shown.map((t, i) => (
@@ -253,7 +262,7 @@ export function AskPanel({ docked, startWithMic, initialText, turns, status, abo
       <div className="chips">
         {about
           ? QUICK_LINE.map((q) => <button key={q.label} className={`chip ${q.tone}`} onClick={() => send(q.intent, q.q)}>{q.label}</button>)
-          : QUICK_PAGE.map((q) => <button key={q} className="chip" onClick={() => send('ask', q)}>{q}</button>)}
+          : HELP_PAGE.map((h) => <button key={h.label} className={`chip ${h.tone}`} onClick={() => send('ask', h.q)}>{h.label}</button>)}
       </div>
       <div className="ask-row">
         <textarea
@@ -281,7 +290,7 @@ export function AskPanel({ docked, startWithMic, initialText, turns, status, abo
         <button className={`icon-btn ${mic === 'recording' ? 'recording' : ''}`} aria-label={mic === 'recording' ? 'Stop recording' : 'Speak your question'} onClick={() => void toggleMic()} disabled={mic === 'transcribing'}>
           {mic === 'recording' ? <Icon.stop /> : <Icon.mic />}
         </button>
-        <button className="icon-btn send" aria-label="Send" disabled={!text.trim() || mic !== 'idle'} onClick={() => send('ask', text.trim())}><Icon.send /></button>
+        <button className="icon-btn send" aria-label="Send" disabled={!text.trim() || mic !== 'idle'} onClick={() => send('ask', text.trim())}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg></button>
       </div>
       {mic === 'recording' && <div className="mic-state"><span className="rec-dot" /> {hearing ? 'Writing what you say' : 'Listening'} · {(elapsed / 1000).toFixed(1)} s / 20 s <button className="link" onClick={cancelMic}>Cancel</button></div>}
       {mic === 'transcribing' && <div className="mic-state">Transcribing on this computer… <button className="link" onClick={cancelMic}>Cancel</button></div>}

@@ -114,3 +114,9 @@
 .rb-link { height: auto; font-size: 13px; text-decoration: underline; padding: 0; }
 .rb-chip { background: rgba(255, 255, 255, 0.92); border-color: #e4e2ea; color: #5a5768; }
 :root[data-theme="dark"] .rb-chip { background: rgba(34, 32, 46, 0.9); border-color: #2c2a37; color: #b3b0c2; }
+
+/* Ask: the three help chips always; suggestions as quiet examples in the empty chat */
+.thread-try { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 12px; }
+.thread-try button { border: 0; background: none; padding: 4px 0; color: var(--nv-accent-ink); font: 600 14px var(--nv-sans); text-align: left; }
+.ask-panel .chips { flex-wrap: nowrap; padding-top: 10px; }
+.ask-row .icon-btn.send:disabled { opacity: 0.5; }
