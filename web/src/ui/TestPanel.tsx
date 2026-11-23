@@ -1,5 +1,5 @@
-// The test sheet beside the paper: questions, progress, help, and — after marking — the score and review.
-// During a test, help is hints only (the server never gives an unrevealed answer); Explain comes after Finish.
+// The test sheet beside the paper (design board "Question paper + Test panel"): progress ring, questions, the open one
+// with Hint / Explain / Full solution. During a test NOVA only gives hints; Explain and Full solution open after Finish.
 
 import type { Page, PaperQuestion, PaperTest } from '../notebook/types'
 import { answerRegions } from '../tutor/usePaper'
@@ -19,7 +19,11 @@ interface Props {
   onPracticeMore?: () => void
 }
 
-export function TestPanel({ test, pages, busy, current, onGoto, onHelp, onReview, onFinish, onRetry, onClose, onPracticeMore }: Props) {
+const Tick = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10" /></svg>
+)
+
+export function TestPanel({ test, pages, busy, current, onGoto, onHelp, onReview, onFinish, onRetry, onPracticeMore }: Props) {
   const practice = test.kind === 'practice'
   const finished = test.status === 'finished'
   const answered = (q: PaperQuestion) => {
@@ -28,97 +32,95 @@ export function TestPanel({ test, pages, busy, current, onGoto, onHelp, onReview
   }
   const nAnswered = test.questions.filter(answered).length
   const total = test.questions.length
+  const ringN = finished && test.score ? test.score.correct : nAnswered
+  const ringD = finished && test.score ? test.score.total : total
+  const pct = ringD ? Math.round((ringN / ringD) * 100) : 0
   const idx = test.questions.findIndex((q) => q.id === current)
   const next = test.questions.find((q, i) => i > idx && !answered(q)) ?? test.questions.find((q) => !answered(q))
+  const ready = test.status === 'ready'
   return (
-    <aside className="test-panel" aria-label="Test" onPointerDown={(e) => e.stopPropagation()}>
-      <header className="tp-head">
-        <div className="tp-heading">
-          <span className="tp-kicker">{finished ? 'Marked' : test.status === 'reading' ? 'Reading the paper' : practice ? 'Practice' : 'Test'}</span>
-          <h2 className="tp-title">{test.title}</h2>
-          {!finished && total > 0 && <span className="tp-meta">{total} questions · {nAnswered} answered</span>}
+    <aside className="test-panel tq" aria-label="Test" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="tq-head">
+        <div className="tq-ring" style={{ background: `conic-gradient(var(--tq-ring) 0 ${pct}%, var(--tq-ring-off) ${pct}% 100%)` }}>
+          <div>{ringN}/{ringD}</div>
         </div>
-        <button className="ask-close" aria-label="Close test panel" onClick={onClose}><Icon.close /></button>
-      </header>
-      {!finished && total > 0 && (
-        <div className="tp-progress" role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={nAnswered} aria-label="Questions answered">
-          <i style={{ width: `${Math.round((nAnswered / total) * 100)}%` }} />
+        <div className="tq-heading">
+          <b>{test.title}</b>
+          <span>{finished ? (practice ? 'Practice · marked' : 'Marked') : `${total} questions · ${nAnswered} answered`}</span>
         </div>
-      )}
-
-      {finished && test.score && (
-        <div className="tp-score">
-          <span className="tp-score-num">{test.score.correct}<small>/{test.score.total}</small></span>
-          <span className="tp-score-note">{test.score.correct === test.score.total ? 'Every answer is right.' : 'Tap Explain on a question to see what went wrong.'}</span>
-        </div>
-      )}
+      </div>
 
       {(test.status === 'reading' || busy) && (
-        <div className="tp-status" role="status">
-          <span className="ob-pill-track" aria-hidden="true"><span /></span>
-          <span>{busy ?? `Reading page ${test.progress.done + 1} of ${test.progress.total}…`}</span>
+        <div className="tq-note" role="status">
+          <span className="ob-pill-track tq-track" aria-hidden="true"><span /></span>
+          {busy ?? `Reading page ${test.progress.done + 1} of ${test.progress.total}…`}
         </div>
       )}
       {test.error && (
-        <div className="tp-error">
+        <div className="tq-note bad">
           {test.error}
           {!!test.failedPages?.length && test.status !== 'reading' && <button className="link strong" onClick={onRetry}>Retry</button>}
         </div>
       )}
       {!finished && test.readPageIds && test.readPageIds.length < test.pageIds.length && test.status !== 'reading' && (
-        <div className="tp-note">NOVA reads each page's questions when you open that page.</div>
+        <div className="tq-note">NOVA reads each page's questions when you open that page.</div>
       )}
 
-      <ol className="tp-list">
+      <ol className="tq-list">
         {test.questions.map((q) => {
           const has = answered(q)
           const open = current === q.id
+          const label = `Q${q.number.replace(/^Q/i, '')}`
           const mark = finished ? q.verdict ?? 'unanswered' : has ? 'done' : 'todo'
+          const box = (
+            <span className={`tq-box ${open && !finished ? 'cur' : mark}`} aria-hidden="true">
+              {mark === 'done' || mark === 'correct' ? <Tick /> : mark === 'incorrect' ? '✗' : q.number.replace(/^Q/i, '')}
+            </span>
+          )
+          if (!open) {
+            return (
+              <li key={q.id} className="tq-q q-row" data-page={q.pageId} data-bounds={`${q.bounds.x},${q.bounds.y},${q.bounds.w},${q.bounds.h}`}>
+                <button className="tq-row" onClick={() => onGoto(q)} title="Show on the page">
+                  {box}
+                  <span className="tq-text"><b>{label}</b> · {q.text}</span>
+                  {finished && q.verdict === 'incorrect' && <span className="tq-side bad">fix</span>}
+                </button>
+              </li>
+            )
+          }
           return (
-            <li key={q.id} className={`tp-q q-row ${open ? 'open' : ''} ${mark}`} data-page={q.pageId} data-bounds={`${q.bounds.x},${q.bounds.y},${q.bounds.w},${q.bounds.h}`}>
-              <button className="tp-q-main" onClick={() => onGoto(q)} aria-expanded={open} title="Show on the page">
-                <span className={`tp-num ${mark}`} aria-hidden="true">{mark === 'done' || mark === 'correct' ? <Icon.check /> : mark === 'incorrect' ? '✗' : q.number}</span>
-                <span className="tp-q-text">
-                  <span className="tp-q-label">Q{q.number.replace(/^Q/i, '')}</span> {q.text}
-                </span>
+            <li key={q.id} className="tq-q q-row open" data-page={q.pageId} data-bounds={`${q.bounds.x},${q.bounds.y},${q.bounds.w},${q.bounds.h}`}>
+              <button className="tq-row" onClick={() => onGoto(q)} title="Show on the page">
+                {box}
+                <span className="tq-text full"><b>{label}</b> · {q.text}</span>
               </button>
-              {(open || finished) && (
-                <div className="tp-q-foot">
-                  {finished ? (
-                    <>
-                      <span className={`tp-verdict ${q.verdict}`}>{q.verdict === 'correct' ? 'Correct' : q.verdict === 'incorrect' ? 'Not right yet' : 'Not answered'}</span>
-                      {q.verdict !== 'correct' && <span className="tp-key">Answer: <b>{q.answer}</b></span>}
-                      <span className="spacer" />
-                      <button className="tp-help" onClick={() => onReview(q)}>Explain</button>
-                    </>
-                  ) : (
-                    <>
-                      <span className="tp-state">{has ? 'Answered on the page' : 'Write in the frame beside the question'}{q.helpCount > 0 ? ` · ${q.helpCount} hint${q.helpCount > 1 ? 's' : ''}` : ''}</span>
-                      <span className="spacer" />
-                      <button className="tp-help hint" disabled={test.status !== 'ready'} onClick={() => onHelp(q)}>Hint</button>
-                    </>
-                  )}
+              {finished && (
+                <div className="tq-verdict">
+                  <span className={q.verdict}>{q.verdict === 'correct' ? 'Correct' : q.verdict === 'incorrect' ? 'Not right yet' : 'Not answered'}</span>
+                  {q.verdict !== 'correct' && <span>Answer: <b>{q.answer}</b></span>}
                 </div>
               )}
-              {open && !finished && <p className="tp-fine">Using help is fine — it's shown in your review.</p>}
+              <div className="tq-help">
+                <button className="hint" aria-label={`Hint for ${label}`} disabled={!ready || finished} onClick={() => onHelp(q)}>Hint</button>
+                <button className="explain" aria-label={`Explain ${label}`} disabled={!finished} title={finished ? undefined : 'Opens after you finish'} onClick={() => onReview(q)}>Explain</button>
+                <button className="solution" aria-label={`Full solution for ${label}`} disabled={!finished} title={finished ? undefined : 'Opens after you finish'} onClick={() => onReview(q)}>Full solution</button>
+              </div>
+              <span className="tq-fine">{finished ? 'Explain shows where your reasoning went wrong.' : `Using help is fine — it's shown in your review.${q.helpCount ? ` (${q.helpCount} ${q.helpCount === 1 ? 'hint' : 'hints'} so far)` : ''} Write in the frame beside the question.`}</span>
             </li>
           )
         })}
       </ol>
 
       {!finished && (
-        <footer className="tp-foot">
-          {next && next.id !== current && <button className="btn" onClick={() => onGoto(next)}>Next question</button>}
-          <span className="spacer" />
-          <button className="btn primary" disabled={test.status !== 'ready' || !total} onClick={onFinish}>{practice ? 'Finish & mark' : 'Finish'}</button>
-        </footer>
+        <div className="tq-foot">
+          <button className="tq-next" disabled={!next || next.id === current} onClick={() => next && onGoto(next)}>Next question</button>
+          <button className="tq-finish" disabled={!ready || !total} onClick={onFinish}>{practice ? 'Finish & mark' : 'Finish'}</button>
+        </div>
       )}
       {finished && practice && onPracticeMore && (
-        <footer className="tp-foot">
-          <span className="muted">{test.score && test.score.correct === test.score.total ? 'All right. Try a few more?' : 'Practice makes it stick.'}</span>
-          <span className="spacer" />
-          <button className="btn primary" disabled={!!busy} onClick={onPracticeMore}><Icon.target /> 5 more like this</button>
-        </footer>
+        <div className="tq-foot">
+          <button className="tq-finish" disabled={!!busy} onClick={onPracticeMore}><Icon.target /> 5 more like this</button>
+        </div>
       )}
     </aside>
   )

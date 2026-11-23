@@ -16,7 +16,7 @@ export function AnswerFrames({ page, test, current }: { page: Page; test: PaperT
         const h = Math.max(48, bottom - top - 8) // never reaches into the next question's band
         return (
           <div key={q.id} className={`answer-frame ${current === q.id ? 'current' : ''}`} style={{ left: x, top, width: w, height: h }} aria-hidden="true">
-            <span className="answer-frame-label">Q{q.number.replace(/^Q/i, '')} · answer here</span>
+            <span className="answer-frame-label">{current === q.id ? 'Answering' : `Q${q.number.replace(/^Q/i, '')} · answer here`}</span>
           </div>
         )
       })}

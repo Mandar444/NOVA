@@ -867,10 +867,10 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
         {historyOpen && !focus && <HistoryDrawer turns={pageTurns} onClose={() => setHistoryOpen(false)} />}
         {!focus && !phone && (ask || (testOpen && activeTest)) && (
           <div className="ob-side" onPointerDown={(e) => e.stopPropagation()}>
-            {ask && testOpen && activeTest && (
+            {testOpen && activeTest && (
               <div className="ob-side-tabs" role="tablist" aria-label="Side panel">
-                <button role="tab" aria-selected={sideTab === 'test'} className={sideTab === 'test' ? 'on' : ''} onClick={() => setSideTab('test')}><Icon.check /> Test</button>
-                <button role="tab" aria-selected={sideTab === 'ask'} className={sideTab === 'ask' ? 'on' : ''} onClick={() => setSideTab('ask')}><Icon.ask /> Ask NOVA</button>
+                <button role="tab" aria-selected={!ask || sideTab === 'test'} className={!ask || sideTab === 'test' ? 'on' : ''} onClick={() => setSideTab('test')}>Test</button>
+                <button role="tab" aria-selected={!!ask && sideTab === 'ask'} className={ask && sideTab === 'ask' ? 'on' : ''} onClick={() => { if (!ask) openAsk(false); setSideTab('ask') }}>Ask NOVA</button>
               </div>
             )}
             {testOpen && activeTest && (
