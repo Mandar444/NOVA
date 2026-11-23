@@ -206,7 +206,7 @@ export function AskPanel({ docked, startWithMic, initialText, turns, status, abo
     <aside className={docked ? 'ask-panel' : 'ask-panel sheet-mode'} style={docked && offsetRight ? { right: offsetRight } : undefined} onPointerDown={(e) => e.stopPropagation()} role="dialog" aria-label="Ask NOVA">
       {!docked && <span className="sheet-grip" aria-hidden="true" />}
       <header className="ask-head">
-        <span className="ask-badge" aria-hidden="true"><Icon.ask /></span>
+        <span className="ask-badge" aria-hidden="true"><img src="/nova-icon.png" alt="" /></span>
         <span className="ask-heading">
           <b className="ask-title">Ask NOVA</b>
           <span className="ask-about">

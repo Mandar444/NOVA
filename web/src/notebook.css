@@ -120,3 +120,8 @@
 .thread-try button { border: 0; background: none; padding: 4px 0; color: var(--nv-accent-ink); font: 600 14px var(--nv-sans); text-align: left; }
 .ask-panel .chips { flex-wrap: nowrap; padding-top: 10px; }
 .ask-row .icon-btn.send:disabled { opacity: 0.5; }
+
+.ob-logo { height: 26px; width: auto; margin: 0 4px 0 2px; display: block; }
+.ask-badge { background: var(--nv-surface-2); border: 1px solid var(--nv-line); }
+.ask-badge img { width: 24px; height: 24px; object-fit: contain; }
+:root[data-theme="dark"] .ask-badge { background: #fff; }

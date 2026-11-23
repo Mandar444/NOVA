@@ -209,3 +209,8 @@
   .hm-continue-sheet, .hm-continue-sheet canvas { height: 150px; }
   .hm-card-sheet canvas { height: 92px; }
 }
+
+/* the NOVA logo (∫NO√4); in dark mode its dark letters turn light, the blue and red stay */
+.hm-logo { height: 40px; width: auto; display: block; }
+:root[data-theme="dark"] .hm-logo, :root[data-theme="dark"] .ob-logo { filter: invert(1) hue-rotate(180deg); }
+@media (max-width: 640px) { .hm-logo { height: 32px; } }

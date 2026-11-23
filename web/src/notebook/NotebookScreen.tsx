@@ -685,6 +685,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
         <div className={`ob-top ${phone ? 'phone' : ''}`}>
           <div className="ob-capsule ob-left" onPointerDown={(e) => e.stopPropagation()}>
             <button className="ob-icon" aria-label="Notebooks" title="Notebooks" onClick={onBack}><Icon.back /></button>
+            {!phone && <img className="ob-logo" src="/nova-logo.png" alt="NOVA" />}
             {phone ? (
               busyOrError ? (
                 statusPill(true)

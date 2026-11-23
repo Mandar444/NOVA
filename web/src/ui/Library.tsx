@@ -155,7 +155,7 @@ export function Library({ tester, onSwitchTester, onOpen, onCreate, onImportPape
     <div className="library hm" onPointerDown={() => menu && setMenu(false)}>
       <div className="hm-wrap">
         <header className="hm-head">
-          <div className="hm-brand"><span className="hm-mark"><Spark /></span><span className="hm-word">nova</span></div>
+          <div className="hm-brand"><img className="hm-logo" src="/nova-logo.png" alt="NOVA" /></div>
           <label className="hm-search">
             <Icon.search />
             <span className="sr-only">Search notebooks</span>
@@ -320,7 +320,6 @@ export function Library({ tester, onSwitchTester, onOpen, onCreate, onImportPape
 const G = ({ children, fill }: { children: React.ReactNode; fill?: boolean }) => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill={fill ? 'currentColor' : 'none'} stroke={fill ? 'none' : 'currentColor'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{children}</svg>
 )
-const Spark = () => <G fill><path d="M12 2.5l2.2 7.3 7.3 2.2-7.3 2.2L12 21.5l-2.2-7.3L2.5 12l7.3-2.2z" /></G>
 const Sliders = () => <G><path d="M4 7h10M18 7h2M4 17h4M12 17h8" /><circle cx="16" cy="7" r="2" /><circle cx="10" cy="17" r="2" /></G>
 const Arrow = () => <G><path d="M5 12h14M13 6l6 6-6 6" /></G>
 const PaperUp = () => <G><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z" /><path d="M14 3v5h5M12 17v-6M9 13l3-3 3 3" /></G>
