@@ -41,12 +41,12 @@ type Gesture =
 export const isInfinite = (_page: Page) => true // imported sheets sit on the same endless grid
 
 /** `top` = height of the floating bar over the page: the sheet's first line starts below it. */
-export function clampView(v: View, page: Page, w: number, h: number, top = 0): View {
+export function clampView(v: View, page: Page, w: number, h: number, top = 0, left = 0): View {
   const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, v.scale))
   const pw = page.width * scale, ph = page.height * scale
   if (isInfinite(page)) {
     // the sheet starts at the top-left corner and keeps going: always room for one more screen of space
-    const tx = Math.min(0, Math.max(-(pw + w * 0.75 - w), v.tx))
+    const tx = Math.min(left, Math.max(-(pw + w * 0.75 - w), v.tx))
     const ty = Math.min(top, Math.max(-(ph + h * 0.75 - h), v.ty))
     return { scale, tx, ty }
   }

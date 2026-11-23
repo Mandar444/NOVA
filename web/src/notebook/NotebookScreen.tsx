@@ -10,6 +10,7 @@ import { useNova, type Intent } from '../tutor/useNova'
 import { AskPanel } from '../ui/AskPopover'
 import { TestPanel } from '../ui/TestPanel'
 import { StatusPill } from '../ui/StatusPill'
+import { AnswerFrames } from '../ui/AnswerFrames'
 import { activeTestFor, answerRegions } from '../tutor/usePaper'
 import { HandwritingSetup } from '../ui/HandwritingSetup'
 import type { StartAction } from '../ui/Home'
@@ -82,6 +83,8 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
   const touch = useMemo(() => typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches, [])
   // height of the floating bars over the page: the page's first line starts below them (Home has its own bar)
   const chromeTop = home ? 0 : phone ? 76 : 84
+  // touch screens keep the tool dock on the left edge: the page starts to its right
+  const chromeLeft = !home && !phone && touch ? 88 : 0
 
   const [tool, setTool] = useState<Tool>('pen')
   const [hovered, setHovered] = useState<string | null>(null)
@@ -113,6 +116,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
   const fileRef = useRef<HTMLInputElement>(null)
   const pdfRef = useRef<HTMLInputElement>(null)
   const [testOpen, setTestOpen] = useState(false)
+  const [currentQ, setCurrentQ] = useState<string | null>(null) // the question the student last opened
   const [sideTab, setSideTab] = useState<'test' | 'ask'>('test') // laptop/tablet: one side area, Test and Ask as tabs
   const [hwOpen, setHwOpen] = useState(false)
   const [practiceOpen, setPracticeOpen] = useState<{ example: string | null } | null>(null)
@@ -156,10 +160,10 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
     (v: View | ((v: View) => View)) => {
       setViewRaw((prev) => {
         const next = typeof v === 'function' ? v(prev) : v
-        return size.w ? clampView(next, stateRef.current.doc.pages[pageId], size.w, size.h, chromeTop) : next
+        return size.w ? clampView(next, stateRef.current.doc.pages[pageId], size.w, size.h, chromeTop, chromeLeft) : next
       })
     },
-    [size.w, size.h, pageId, chromeTop],
+    [size.w, size.h, pageId, chromeTop, chromeLeft],
   )
   /** Bring what NOVA just wrote into view: it must never land off-screen or behind the Ask panel. */
   const revealRef = useRef<(batchId: string) => void>(() => undefined)
@@ -185,21 +189,26 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
     })
   }
 
+  // true while the view is NOVA's own fit (the student hasn't panned or zoomed since): then a width change refits
+  const autoFit = useRef(false)
   const fitWidth = useCallback(() => {
     if (!size.w) return
+    autoFit.current = true
     if (page.bg) {
-      // an imported sheet: fit its width, leaving the grid around it
-      const scale = Math.min(2, (size.w - (phone ? 16 : 120)) / page.bg.w)
-      setView({ scale, tx: 0, ty: chromeTop })
+      // an imported sheet: fit its width, leaving the grid around it; a test paper also shows the answer column beside it
+      const isTestPage = !phone && Object.values(stateRef.current.doc.tests ?? {}).some((t) => t.pageIds.includes(page.id) && t.status !== 'finished')
+      const room = size.w - chromeLeft - (phone ? 16 : 120)
+      const scale = Math.min(2, room / (page.bg.w + (isTestPage && room >= 900 ? 400 : 0)))
+      setView({ scale, tx: chromeLeft, ty: chromeTop })
       return
     }
     if (isInfinite(page)) {
-      setView({ scale: 1, tx: 0, ty: chromeTop }) // phones too: zooming out makes finger writing huge in page terms
+      setView({ scale: 1, tx: chromeLeft, ty: chromeTop }) // phones too: zooming out makes finger writing huge in page terms
       return
     }
     const scale = Math.min(2, (size.w - (phone ? 16 : 48)) / page.width)
     setView({ scale, tx: phone ? 8 : 24, ty: chromeTop + (phone ? 12 : 16) })
-  }, [size.w, page, phone, setView, chromeTop])
+  }, [size.w, page, phone, setView, chromeTop, chromeLeft])
 
   useLayoutEffect(() => {
     if (!size.w) return
@@ -211,6 +220,11 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
   useEffect(() => {
     views.current.set(pageId, view)
   }, [view, pageId])
+  // the side panel opened or closed (or the window resized): keep a page the student hasn't moved fitted
+  useEffect(() => {
+    if (autoFit.current) fitWidth()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [size.w])
 
   // the endless grid: whatever part of it is on screen is part of the page (so NOVA can place things there too)
   useEffect(() => {
@@ -432,7 +446,8 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
 
   const testsList = Object.values(doc.tests ?? {}).sort((a, b) => b.createdAt - a.createdAt)
   const activeTest = testsList.find((t) => t.pageIds.includes(pageId)) ?? testsList[0]
-  const gotoQuestion = (q: { pageId: string; bounds: Rect }) => {
+  const gotoQuestion = (q: { id?: string; pageId: string; bounds: Rect }) => {
+    if (q.id) setCurrentQ(q.id)
     openPage(q.pageId)
     setTimeout(() => setView((v) => ({ ...v, ty: 130 - q.bounds.y * v.scale })), 60)
   }
@@ -752,7 +767,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
           stylusOnly={settings.stylusOnly}
           lasso={lasso}
           view={view}
-          setView={setView}
+          setView={(v) => { autoFit.current = false; setView(v) }}
           backgroundUrl={bgUrl}
           onSize={(w, h) => setSize({ w, h })}
           onCommitStroke={commitStroke}
@@ -790,6 +805,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
                 </div>
               )}
               {home && <Shelf onOpen={home.onOpen} onCreate={home.onNew} />}
+              {activeTest && activeTest.pageIds.includes(page.id) && <AnswerFrames page={page} test={activeTest} current={currentQ} />}
               <TutorLayer
                 page={page}
                 regionBounds={regionBounds}
@@ -838,7 +854,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
                   test={activeTest}
                   pages={doc.pages}
                   busy={paper.busy}
-                  onGoto={gotoQuestion}
+                  current={currentQ} onGoto={gotoQuestion}
                   onHelp={(q) => paper.help(activeTest.id, q)}
                   onReview={(q) => paper.review(activeTest.id, q)}
                   onFinish={() => void paper.finish(activeTest.id)}
@@ -856,7 +872,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
             test={activeTest}
             pages={doc.pages}
             busy={paper.busy}
-            onGoto={gotoQuestion}
+            current={currentQ} onGoto={gotoQuestion}
             onHelp={(q) => paper.help(activeTest.id, q)}
             onReview={(q) => paper.review(activeTest.id, q)}
             onFinish={() => void paper.finish(activeTest.id)}
