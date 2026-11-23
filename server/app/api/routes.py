@@ -44,7 +44,7 @@ async def capabilities() -> Capabilities:
             "tutor": settings.key_configured,
             "check": True,
             "plot": True,
-            "transcribe": bool(speech["installed"]),
+            "transcribe": bool(speech["usable"]),
             "imageImport": True,
             "pdfImport": False,
         },
@@ -208,8 +208,9 @@ async def solve(req: SolveRequest) -> SolveResponse:
 @router.post("/transcribe")
 async def transcribe(requestId: UUID = Form(...), audio: UploadFile = File(...)) -> dict:
     rid = str(requestId)
-    if not transcriber.engine_installed():
-        raise ApiError("FEATURE_UNAVAILABLE", "No speech engine is installed on the server. Typing still works.", rid, retryable=False)
+    ok, why = transcriber.usable()
+    if not ok:
+        raise ApiError("FEATURE_UNAVAILABLE", why or "Speech recognition is not set up on this computer.", rid, retryable=False)
     data = await audio.read(MAX_AUDIO_BYTES + 1)
     if len(data) > MAX_AUDIO_BYTES:
         raise ApiError("PAYLOAD_TOO_LARGE", "Recording is larger than 5 MB.", rid, retryable=False)
@@ -217,6 +218,23 @@ async def transcribe(requestId: UUID = Form(...), audio: UploadFile = File(...))
         raise ApiError("INVALID_INPUT", "Recording is empty.", rid, retryable=False)
     t = await transcriber.transcribe(data, audio.content_type or "", rid)
     return {"requestId": rid, "transcript": t.text, "durationS": t.duration_s, "latencyMs": t.latency_ms, "language": t.language}
+
+
+class InterpretMathRequest(BaseModel):
+    requestId: UUID
+    transcript: str
+    attempt: str = ""
+
+
+@router.post("/interpret-math")
+async def interpret_math(req: InterpretMathRequest, request: Request) -> dict:
+    """Spoken maths the rules could not fully understand: BharatCode proposes notation (validated; the student confirms)."""
+    from .. import dictation
+
+    rid = str(req.requestId)
+    if not req.transcript.strip():
+        raise ApiError("INVALID_INPUT", "Say or type the maths first.", rid, retryable=False)
+    return await _until_disconnect(request, dictation.interpret(req.transcript[:600], req.attempt[:200], rid), rid)
 
 
 @router.get("/health")

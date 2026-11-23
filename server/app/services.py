@@ -415,6 +415,9 @@ def _checked_solution(req: TutorRequest, actions: list, rid: str) -> list:
     if not req.problem or not req.problem.text:
         return actions
     prob = req.problem.text
+    exact = engine_value(prob)
+    if exact:
+        return _checked_value(prob, exact, actions, rid)
 
     def broken(line: str) -> bool:
         eq = re.split(r"\s{2,}|\s+\(|\s+[-–—]\s", line, maxsplit=1)[0]
@@ -446,12 +449,124 @@ def _checked_solution(req: TutorRequest, actions: list, rid: str) -> list:
     return [a for a in actions if a.type != "write_lines"] + [sol]
 
 
+def _ends_with_value(line: str, value: str) -> bool:
+    v = re.escape(value.replace(" ", ""))
+    return bool(re.search(r"=\s*" + v + r"(\s*\(|\s*$)", line.replace(" ", "").replace("−", "-")))
+
+
+def engine_value(problem: str | None) -> str | None:
+    """The exact value of a closed problem (an integral, a derivative, an arithmetic expression), if NOVA's engine has it."""
+    if not problem or "=" in problem.replace("==", ""):
+        return None
+    try:
+        r = solve_run(problem.strip() + " =", "auto")
+    except Exception:
+        return None
+    return r.answer if r.status == "answered" and r.answer else None
+
+
+_SPOKEN_POW = {"squared": "²", "cubed": "³"}
+
+
+def topic_expression(question: str) -> str | None:
+    """'Help me understand integration of x squared' → '∫ x² dx' (only when the expression is plainly stated)."""
+    m = re.search(r"\b(?:integrat\w*|integral)\s+of\s+([a-z0-9 ^²³+\-]+?)(?:\s+from\b.*)?[?.!]*$", question.strip(), re.I)
+    if m:
+        body = re.sub(r"\s+(squared|cubed)\b", lambda k: _SPOKEN_POW[k.group(1).lower()], m.group(1).strip())
+        if re.fullmatch(r"[a-z0-9 ^²³+\-]{1,30}", body, re.I):
+            return f"∫ {body} dx"
+    m = re.search(r"\b(?:differentiat\w*|derivative of)\s+([a-z0-9 ^²³+\-]+?)[?.!]*$", question.strip(), re.I)
+    if m:
+        body = re.sub(r"\s+(squared|cubed)\b", lambda k: _SPOKEN_POW[k.group(1).lower()], m.group(1).strip())
+        if re.fullmatch(r"[a-z0-9 ^²³+\-]{1,30}", body, re.I):
+            return f"d/dx({body})"
+    return None
+
+
+def topic_rules(text: str) -> tuple[str, list[str]]:
+    """The rule(s) a maths topic rests on — what the student needs, never the answer to their question."""
+    t = text.lower()
+    if "∫" in text or "integra" in t:
+        rules = ["∫ xⁿ dx = xⁿ⁺¹/(n + 1) + C   (n ≠ −1)"]
+        if re.search(r"∫\s*_|from\s+\S+\s+to", text):
+            rules.append("∫ₐᵇ f(x) dx = F(b) − F(a),  F = antiderivative")
+        return "Integration: the power rule", rules
+    if "d/d" in t or "differentiat" in t or "derivative" in t:
+        rules = ["d/dx(xⁿ) = n·xⁿ⁻¹"]
+        if "sin" in t or "cos" in t:
+            rules.append("d/dx(sin x) = cos x,  d/dx(cos x) = −sin x")
+        return "Differentiation", rules
+    if re.search(r"(x\^2|x²).*=", text):
+        return "Quadratic equations", ["ax² + bx + c = 0: factorise, or", "x = (−b ± √(b² − 4ac)) / 2a"]
+    if re.search(r"[a-z].*=", text):
+        return "Solving an equation", ["Do the same thing to both sides", "until the letter is alone"]
+    return "", []
+
+
+def _canvas_teaching(req: TutorRequest, actions: list, rid: str, explanation: str) -> list:
+    """Hint / explain about some maths must leave useful maths on the page, not only words in the chat:
+    when the model wrote nothing, NOVA writes the expression and the rule it rests on (never the final value)."""
+    if any(a.type in ("write_lines", "write_table", "draw_figure", "write_equation", "plot_function", "draw_groups") for a in actions):
+        return actions
+    if req.current:
+        return actions  # feedback on a step of their own sits on that line already
+    expr = req.problem.text if req.problem else topic_expression(req.question or "")
+    title, rules = topic_rules(" ".join(x for x in (expr or "", req.question or "") if x))
+    if not rules:
+        return actions
+    lines = ([clean_math(expr, 80)] if expr else []) + [clean_math(r, 80) for r in rules]
+    anchor = req.problem.regionId if req.problem else "page"
+    act = _action_adapter.validate_python({"id": f"{rid}:w", "type": "write_lines", "anchorRegionId": anchor, "title": title,
+                                           "lines": lines, "inks": ["black"] + ["blue"] * (len(lines) - 1)})
+    act.verified = [True] * len(lines)
+    return actions + [act]
+
+
+def _checked_value(prob: str, exact: str, actions: list, rid: str) -> list:
+    """A closed problem with an exact value: the written working must end on that value. A line that states a different
+    final value is dropped, and the checked result is written last (marked as checked by NOVA's engine)."""
+    written = [a for a in actions if a.type == "write_lines"]
+    if not written:
+        written = [_action_adapter.validate_python({"id": f"{rid}:s", "type": "write_lines", "anchorRegionId": "page", "title": "Worked solution",
+                                                    "lines": [clean_math(prob, 80)], "inks": ["black"]})]
+        written[0].verified = [True]
+        actions = [a for a in actions] + written
+    sol = written[-1]
+    tail = re.compile(r"=\s*(-?[\d.]+(?:\s*/\s*\d+)?)\s*(\(.*\))?\s*$")
+
+    def same(a: str, b: str) -> bool:
+        try:
+            from fractions import Fraction
+            return Fraction(a.replace(" ", "")) == Fraction(b.replace(" ", ""))
+        except (ValueError, ZeroDivisionError):
+            return a.replace(" ", "") == b.replace(" ", "")
+
+    keep = []
+    for k, line in enumerate(sol.lines):
+        m = tail.search(line.replace("−", "-"))
+        if m and k == len(sol.lines) - 1 and not same(m.group(1), exact):
+            continue  # a wrong final value is never written
+        keep.append(k)
+    sol.lines = [sol.lines[k] for k in keep]
+    sol.inks = [sol.inks[k] for k in keep if k < len(sol.inks)]
+    sol.verified = [sol.verified[k] for k in keep if k < len(sol.verified)]
+    has = any((m := tail.search(x.replace("−", "-"))) and same(m.group(1), exact) for x in sol.lines)
+    if not has:
+        sol.lines.append(clean_math(f"= {exact}   (checked by NOVA's engine)", 80))
+        sol.inks.append("blue")
+        sol.verified.append(True)
+    else:
+        sol.verified = [True if (m := tail.search(x.replace("−", "-"))) and same(m.group(1), exact) else (sol.verified[i] if i < len(sol.verified) else False) for i, x in enumerate(sol.lines)]
+    return actions
+
+
 def _validate_actions(raw_actions: Any, req: TutorRequest, known: set[str], answer: str | None, value: str | None = None) -> list[Any]:
     out: list[Any] = []
     if not isinstance(raw_actions, list):
         return out
     rid = str(req.context.requestId)
-    hide = teaching_mode(req) != "solution"  # the student's next line and solved form are never written for them
+    mode = teaching_mode(req)
+    hide = mode != "solution"  # the student's next line of an equation is theirs to write (hint and explain alike)
     hidden = [x for x in (answer, value) if x]
     for item in raw_actions:
         if len(out) >= MAX_ACTIONS:
@@ -499,7 +614,8 @@ def _validate_actions(raw_actions: Any, req: TutorRequest, known: set[str], answ
                     try:
                         solve_tokenize(expr)
                     except SolveError:
-                        continue
+                        if mode != "explain":
+                            continue  # explain may write a rule or formula the linear checker can't read (∫ xⁿ dx = …)
                 obj = {"id": aid, "type": typ, "anchorRegionId": anchor, "expression": expr, "purpose": "hint", "verified": False}
             elif typ == "draw_groups":
                 groups = [clean_text(g, 24) for g in (item.get("groups") or []) if clean_text(g, 24)]
@@ -521,6 +637,8 @@ def _validate_actions(raw_actions: Any, req: TutorRequest, known: set[str], answ
                     text = clean_math(text, 80)
                     if text and _is_students_step(req, text, hide):
                         continue  # a correct next line is the student's step to take, not a note
+                    if text and mode != "solution" and any(_ends_with_value(text, v) for v in hidden):
+                        continue  # explain shows the working, the final value stays theirs
                     if text:
                         lines_in.append(text)
                         inks.append(ink if ink in ("blue", "red", "black") else "blue")
@@ -926,10 +1044,13 @@ async def tutor(req: TutorRequest) -> TutorResponse:
     mode = teaching_mode(req)
     answer = None if mode == "solution" else _unique_solution(req.problem.text if req.problem else None)
     exam_value = (_final_value(req.exam.answer) or None) if req.exam and not req.exam.reveal and req.exam.answer else None
-    explanation, raw, model = await _ask_model(req, known, check, [answer, exam_value])
-    actions = await _verify_written(_validate_actions(raw, req, known, answer, exam_value))
+    closed = None if mode == "solution" or req.exam else await asyncio.to_thread(engine_value, req.problem.text if req.problem else None)
+    explanation, raw, model = await _ask_model(req, known, check, [answer, exam_value, closed])
+    actions = await _verify_written(_validate_actions(raw, req, known, answer, exam_value or closed))
     if mode == "solution" and not req.exam:
         actions = _checked_solution(req, actions, rid)
+    elif not req.exam and req.intent in ("ask", "hint", "explain"):
+        actions = _canvas_teaching(req, actions, rid, explanation)
     return done(explanation, actions, check=check, verified="deterministic" if check else "model", model=model)
 
 

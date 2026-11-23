@@ -56,6 +56,22 @@ export interface Region {
   sourceHash: string
   origin: 'auto' | 'explicit'
   createdAt: number
+  typedId?: string // a dictated/typed block: the student's own content, read from its text (never OCR'd)
+}
+
+/** Maths the student dictated (or typed) onto the page: their work, kept as text — not pen strokes, not a tutor answer. */
+export interface TypedBlock {
+  id: string
+  text: string // canonical (what NOVA's engine and tutor read), e.g. "∫_0^2 x^2 dx"
+  display: string // as shown on the page, e.g. "∫₀² x² dx"
+  x: number
+  y: number
+  w: number
+  h: number
+  fontSize: number
+  createdAt: number
+  source: 'dictation' | 'typed'
+  transcript?: string // what was said, for reference
 }
 
 export type TutorAction =
@@ -201,6 +217,7 @@ export interface Page {
   source?: { pdfAssetId: string; index: number } // where an imported sheet comes from, to (re)draw it
   docText?: DocLine[]
   strokes: Stroke[]
+  typed?: TypedBlock[]
   regions: Region[]
   readings: Record<string, Reading>
   problemRegionId?: string

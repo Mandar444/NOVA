@@ -8,6 +8,8 @@ import { clampView, isInfinite, Workspace } from './Workspace'
 import { TutorLayer } from '../tutor/Annotations'
 import { useNova, type Intent } from '../tutor/useNova'
 import { AskPanel } from '../ui/AskPopover'
+import { DictatePanel } from '../ui/DictatePanel'
+import { TypedLayer, TYPED_FONT, typedWidth } from './TypedLayer'
 import { TestPanel } from '../ui/TestPanel'
 import { StatusPill } from '../ui/StatusPill'
 import { AnswerFrames } from '../ui/AnswerFrames'
@@ -95,6 +97,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
   const [size, setSize] = useState({ w: 0, h: 0 })
   const [selected, setSelected] = useState<string | null>(null)
   const [ask, setAsk] = useState<{ mic: boolean; key: number; text?: string } | null>(null)
+  const [dictate, setDictate] = useState<{ mic: boolean; key: number } | null>(null) // "Write on page" by voice
   const [askAbout, setAskAbout] = useState<string | null>(null) // line the conversation is about (null = whole page)
   const [pagesOpen, setPagesOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -174,7 +177,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
     const x0 = Math.min(...objs.map((t) => t.layout.x)), y0 = Math.min(...objs.map((t) => t.layout.y))
     const x1 = Math.max(...objs.map((t) => t.layout.x + t.layout.w)), y1 = Math.max(...objs.map((t) => t.layout.y + t.layout.h))
     // the part of the workspace nothing covers (the Ask panel sits on the right, or over the bottom on a phone)
-    const visW = size.w - (ask && !phone ? 432 : 0)
+    const visW = size.w - ((ask || dictate) && !phone ? 432 : 0)
     const visH = ask && phone ? size.h * 0.38 : size.h
     setView((v) => {
       const pad = 24
@@ -319,8 +322,41 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
 
   const openAsk = (mic = false) => {
     setMenu(null)
+    setDictate(null)
     setAskAbout(selected)
     setAsk({ mic, key: Date.now() })
+  }
+
+  const openDictate = (mic = true) => {
+    setMenu(null)
+    setAsk(null)
+    setDictate({ mic, key: Date.now() })
+  }
+
+  /** Dictated maths goes on the page as the student's own text: below their latest work (or at the top of the view),
+   *  clear of NOVA's writing, never solved. Its reading is its own text (no handwriting recognition). */
+  const insertTyped = (text: string, display: string, transcript: string) => {
+    const pg = stateRef.current.doc.pages[pageId]
+    if (!pg) return
+    const h = Math.round(TYPED_FONT * 1.5)
+    const w = typedWidth(display)
+    const mine = pg.regions.filter((r) => r.bounds.w > 0)
+    const taken: Rect[] = [...mine.map((r) => r.bounds), ...pg.tutorObjects.filter((t) => t.status === 'active').map((t) => t.layout)]
+    let x: number, y: number
+    if (mine.length) {
+      x = Math.max(24, Math.min(...mine.map((r) => r.bounds.x)))
+      y = Math.max(...mine.map((r) => r.bounds.y + r.bounds.h)) + 40
+    } else {
+      x = Math.max(40, (-view.tx + 80) / view.scale)
+      y = Math.max(40, (-view.ty + 150) / view.scale)
+    }
+    const hits = (yy: number) => taken.some((t) => t.x < x + w && t.x + t.w > x && t.y < yy + h + 12 && t.y + t.h > yy - 12)
+    for (let k = 0; k < 60 && hits(y); k++) y += 24
+    const id = shortId('tb')
+    const regionId = shortId('r')
+    dispatch({ type: 'addTyped', pageId, regionId, asProblem: true, block: { id, text, display, x, y, w, h, fontSize: TYPED_FONT, createdAt: Date.now(), source: 'dictation', transcript: transcript.slice(0, 600) } })
+    setTimeout(() => showRegion(regionId), 50)
+    toast('Written on your page. Select it to ask NOVA for a hint, an explanation or the full solution.')
   }
 
   /** From the region menu: act on the selected line. */
@@ -643,12 +679,15 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
       />
     )
 
+  const dictatePanel = (docked: boolean) =>
+    dictate && <DictatePanel key={dictate.key} docked={docked} startWithMic={dictate.mic} onInsert={insertTyped} onClose={() => setDictate(null)} />
+
   const saveLabel = saveStatus === 'saving' ? 'Saving…' : saveStatus === 'error' ? 'Not saved' : 'Saved'
 
   return (
     <div
       ref={rootRef}
-      className={`notebook ${phone ? 'phone' : desktop ? 'desktop' : 'tablet'} ${focus ? 'focus' : ''} ${!focus && !phone && (ask || (testOpen && activeTest)) ? 'side-open' : ''} ${pagesOpen && !focus && !phone ? 'pages-open' : ''}`}
+      className={`notebook ${phone ? 'phone' : desktop ? 'desktop' : 'tablet'} ${focus ? 'focus' : ''} ${!focus && !phone && (ask || dictate || (testOpen && activeTest)) ? 'side-open' : ''} ${pagesOpen && !focus && !phone ? 'pages-open' : ''}`}
       onPointerDown={() => menu && setMenu(null)}
       onPointerMove={(e) => {
         if (e.pointerType !== 'mouse') return
@@ -762,6 +801,10 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
           <span className="ob-sep" />
           <button className="ob-tool sm" aria-label="Undo" title="Undo" disabled={!canUndo} onClick={() => dispatch({ type: 'undo', pageId })}><Icon.undo /></button>
           <button className="ob-tool sm" aria-label="Redo" title="Redo" disabled={!canRedo} onClick={() => dispatch({ type: 'redo', pageId })}><Icon.redo /></button>
+          <span className="ob-sep" />
+          <button className={`ob-tool ob-dictate ${dictate ? 'active' : ''}`} data-testid="dictate-open" aria-label="Write on page by voice" title="Write on page by voice: say a question or equation" onClick={() => (dictate ? setDictate(null) : openDictate(true))}>
+            <Icon.mic />{desktop && !touch && <span className="ob-tool-label">Write</span>}
+          </button>
           {!(desktop && !touch) && (
             <>
               <span className="ob-sep" />
@@ -833,6 +876,13 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
               )}
               {home && <Shelf onOpen={home.onOpen} onCreate={home.onNew} />}
               {activeTest && activeTest.pageIds.includes(page.id) && <AnswerFrames page={page} test={activeTest} current={currentQ} />}
+              <TypedLayer
+                page={page}
+                selectedRegionId={selected}
+                onSelect={(id) => setSelected(id)}
+                onEdit={(id, text, display, w) => dispatch({ type: 'editTyped', pageId, id, text, display, w })}
+                onDelete={(id) => { dispatch({ type: 'deleteTyped', pageId, id }); setSelected(null) }}
+              />
               <TutorLayer
                 page={page}
                 regionBounds={regionBounds}
@@ -871,7 +921,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
           }
         />
         {historyOpen && !focus && <HistoryDrawer turns={pageTurns} onClose={() => setHistoryOpen(false)} />}
-        {!focus && !phone && (ask || (testOpen && activeTest)) && (
+        {!focus && !phone && (ask || dictate || (testOpen && activeTest)) && (
           <div className="ob-side" onPointerDown={(e) => e.stopPropagation()}>
             {testOpen && activeTest && (
               <div className="ob-side-tabs" role="tablist" aria-label="Side panel">
@@ -896,6 +946,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
               </div>
             )}
             {ask && <div className="ob-side-pane" hidden={!!(testOpen && activeTest) && sideTab !== 'ask'}>{askPanel(true)}</div>}
+            {dictate && !ask && <div className="ob-side-pane">{dictatePanel(true)}</div>}
           </div>
         )}
         {phone && testOpen && activeTest && !focus && (
@@ -929,6 +980,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
                   <button className="ob-tool" aria-label="Redo" disabled={!canRedo} onClick={() => dispatch({ type: 'redo', pageId })}><Icon.redo /></button>
                   <button className="ob-tool" aria-label="Fit width" onClick={() => { fitWidth(); setMenu(null) }}><Icon.fit /></button>
                   <button className="ob-tool" aria-label="Ask by voice" onClick={() => { openAsk(true); setMenu(null) }}><Icon.mic /></button>
+                  <button className="ob-tool" aria-label="Write on page by voice" onClick={() => { openDictate(true); setMenu(null) }}><Icon.pen /></button>
                 </div>
                 {inkPopover.props.children}
                 <hr />
@@ -959,6 +1011,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
       )}
 
       {ask && (phone || focus) && askPanel(false)}
+      {dictate && !ask && (phone || focus) && dictatePanel(false)}
       {sheet && <ObjectSheet obj={sheet} onClose={() => setSheet(null)} />}
       {paper.busy && !(testOpen && activeTest) && (
         <div className="busy-banner" role="status"><span className="spinner" />{paper.busy}</div>

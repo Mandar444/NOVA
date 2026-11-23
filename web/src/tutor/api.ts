@@ -186,6 +186,8 @@ export const api = {
     call<{ topic: string; latencyMs: number; questions: { number: string; text: string; kind: string; options: string[]; answer: string; answerVerified: boolean; corrected: boolean }[] }>('/api/v1/practice', json(body)),
   paperGrade: (items: { id: string; kind: string; answer: string; student: string }[]) =>
     call<{ id: string; verdict: 'correct' | 'incorrect' | 'unanswered' }[]>('/api/v1/paper/grade', json({ items })),
+  interpretMath: (body: { requestId: string; transcript: string; attempt: string }, signal?: AbortSignal, budgetMs = 20_000) =>
+    call<{ text: string; question: string | null; options: string[]; model?: string }>('/api/v1/interpret-math', json(body, budgetMs), signal),
   transcribe: (requestId: string, audio: Blob, signal?: AbortSignal) => {
     const fd = new FormData()
     fd.append('requestId', requestId)

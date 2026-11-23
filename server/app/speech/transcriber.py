@@ -13,7 +13,9 @@ import tempfile
 import time
 from dataclasses import dataclass
 
-from ..config import MAX_AUDIO_SECONDS, SERVER_DIR, settings
+from pathlib import Path
+
+from ..config import MAX_AUDIO_SECONDS, REPO_DIR, SERVER_DIR, settings
 from ..errors import ApiError
 
 log = logging.getLogger("nova.speech")
@@ -30,6 +32,46 @@ class Transcript:
     language: str | None
 
 
+def model_dirs() -> list[Path]:
+    """Where an already-downloaded speech model may live, in order: an explicit NOVA_SPEECH_MODELS_DIR, this checkout's
+    server/models, and (for a git worktree) the main checkout's server/models — so a model downloaded once is reused."""
+    out: list[Path] = []
+    env = os.environ.get("NOVA_SPEECH_MODELS_DIR", "").strip()
+    if env:
+        out.append(Path(env))
+    out.append(SERVER_DIR / "models")
+    git = REPO_DIR / ".git"
+    try:
+        if git.is_file():  # a worktree: ".git" names <main>/.git/worktrees/<name>
+            line = git.read_text(encoding="utf-8").strip()
+            if line.startswith("gitdir:"):
+                main = Path(line[7:].strip()).resolve().parents[2]
+                out.append(main / "server" / "models")
+    except (OSError, IndexError):
+        pass
+    seen, uniq = set(), []
+    for d in out:
+        k = str(d.resolve()) if d.exists() else str(d)
+        if k not in seen:
+            seen.add(k)
+            uniq.append(d)
+    return uniq
+
+
+def find_model(name: str) -> Path | None:
+    """The local files for `name` (a faster-whisper size like "base.en", or a directory with model.bin), or None."""
+    direct = Path(name)
+    if direct.is_dir() and (direct / "model.bin").is_file():
+        return direct
+    for root in model_dirs():
+        snaps = root / f"models--Systran--faster-whisper-{name}" / "snapshots"
+        if snaps.is_dir():
+            for snap in sorted(snaps.iterdir(), reverse=True):
+                if (snap / "model.bin").is_file() and (snap / "config.json").is_file():
+                    return snap
+    return None
+
+
 class Transcriber:
     def __init__(self) -> None:
         self._model = None
@@ -44,9 +86,24 @@ class Transcriber:
         except Exception:
             return False
 
+    def usable(self) -> tuple[bool, str | None]:
+        """Can a recording actually be transcribed here? (package importable AND model files present AND not known broken)"""
+        if not self.engine_installed():
+            return False, "The speech engine (faster-whisper) is not installed on this computer."
+        if self._model is None and find_model(settings.whisper_model) is None and not settings.speech_allow_download:
+            return False, f"The speech model '{settings.whisper_model}' is not downloaded. Run: python scripts/setup_speech.py"
+        if self._model is None and self._error:
+            return False, f"The speech model could not be loaded ({self._error[:120]})."
+        return True, None
+
     def status(self) -> dict:
+        ok, why = self.usable()
+        path = find_model(settings.whisper_model)
         return {
             "engine": "faster-whisper",
+            "usable": ok,
+            "reason": why,
+            "modelPath": str(path) if path else None,
             "installed": self.engine_installed(),
             "model": settings.whisper_model,
             "device": settings.whisper_device,
@@ -64,8 +121,9 @@ class Transcriber:
         except Exception:
             raise ApiError("FEATURE_UNAVAILABLE", "No speech engine is installed on the server. Typing still works.", retryable=False)
         try:
+            local = find_model(settings.whisper_model)
             self._model = WhisperModel(
-                settings.whisper_model,
+                str(local) if local else settings.whisper_model,
                 device=settings.whisper_device,
                 compute_type=settings.whisper_compute,
                 download_root=str(SERVER_DIR / "models"),
@@ -77,7 +135,7 @@ class Transcriber:
             log.warning("speech model load failed: %s", self._error)
             raise ApiError(
                 "FEATURE_UNAVAILABLE",
-                f"Speech model '{settings.whisper_model}' is not available locally. Run scripts/setup_speech.py once.",
+                f"Speech model '{settings.whisper_model}' is not available locally. Run: python scripts/setup_speech.py",
                 retryable=False,
             )
         return self._model
@@ -115,6 +173,15 @@ class Transcriber:
             try:
                 os.remove(path)  # never retain raw audio
             except OSError:
+                pass
+
+
+    def warm(self) -> None:
+        """Load the model in the background at start-up (never blocks requests; failures are recorded in status)."""
+        if self.engine_installed() and (find_model(settings.whisper_model) or settings.speech_allow_download):
+            try:
+                self._load()
+            except Exception:
                 pass
 
 

@@ -23,6 +23,7 @@ function contentBox(page: Page): { x: number; y: number; w: number; h: number } 
   }
   for (const s of page.strokes) for (const p of s.points) add(p.x, p.y)
   for (const t of page.tutorObjects) if (t.status !== 'dismissed' && t.action.type === 'write_ink') for (const st of t.action.strokes) for (const [x, y] of st) add(x, y)
+  for (const b of page.typed ?? []) { add(b.x, b.y); add(b.x + b.w, b.y + b.h) }
   if (!Number.isFinite(x0)) return null
   return { x: x0 - PAD, y: y0 - PAD, w: x1 - x0 + PAD * 2, h: y1 - y0 + PAD * 2 }
 }
@@ -84,6 +85,13 @@ export async function renderPagePng(page: Page, caption = ''): Promise<Blob> {
     ctx.beginPath()
     st.points.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)))
     ctx.stroke()
+  }
+  // the student's dictated maths (text)
+  for (const b of page.typed ?? []) {
+    ctx.fillStyle = '#1f2a44'
+    ctx.font = `${b.fontSize}px "Cambria Math", "STIX Two Math", "Times New Roman", serif`
+    ctx.textBaseline = 'middle'
+    ctx.fillText(b.display, b.x + 6, b.y + b.h / 2)
   }
   for (const t of page.tutorObjects) {
     if (t.status === 'dismissed' || t.action.type !== 'write_ink') continue

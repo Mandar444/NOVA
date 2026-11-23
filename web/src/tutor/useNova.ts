@@ -9,7 +9,7 @@ import type { Page, Reading, Rect, Region, TutorAction, TutorObject, Turn } from
 import { renderRegion } from '../recognition/render'
 import { inflate, intersects, strokeBounds, union } from '../notebook/geometry'
 import { RecognitionScheduler, type ReadPhase } from '../recognition/scheduler'
-import { speak, stopSpeaking } from '../voice/speech'
+import { speak, stopSpeaking, voiceRepliesOn } from '../voice/speech'
 import { trace } from './trace'
 import { readLocally, localReaderEnabled, warmLocalReader, engineText, type LocalResult, type LocalAnswers } from '../recognition/localReader'
 import { ApiFailure, INTERACTIVE_DEADLINE_MS, TEACHING_DEADLINE_MS, api, type RequestContext, type TutorPayload, type TutorResult } from './api'
@@ -105,6 +105,9 @@ function isWorkingStep(page: Page, problemId: string, line: { bounds: Rect }, te
   return true
 }
 
+/** A follow-up to the previous teaching turn rather than a new question. */
+export const FOLLOW_UP = /(still (don'?t|do not|can'?t) (get|understand|see)|(don'?t|do not) (get|understand)|explain (it |that |this )?(again|differently|another way|more simply)|another way|differently|simpler|what do you mean|i'?m (lost|confused)|confused|why\??$|^why|one more time|go slower)/i
+
 export function useNova(o: Options) {
   const [phases, setPhases] = useState<Record<string, { phase: ReadPhase; error?: string; since?: number }>>({})
   // local reader results that were NOT reliable enough to act on alone: their symbol questions are shown while the cloud reads
@@ -122,6 +125,7 @@ export function useNova(o: Options) {
   const lineDeadline = useRef(new Map<string, number>()) // when each line's attempt runs out (Date.now() ms)
   const lastEdited = useRef<string | null>(null)
   const anchorRects = useRef(new Map<string, Rect>()) // page-level requests: where on the page the answer belongs
+  const lastTeaching = useRef<{ pageId: string; problemId?: string; currentId?: string } | null>(null) // follow-ups stay on this
   const speakReplies = useRef(new Set<string>()) // requests asked by voice: answer out loud
 
   const page = () => opts.current.stateRef.current!.doc.pages[opts.current.pageId]
@@ -148,6 +152,7 @@ export function useNova(o: Options) {
     const p = page()
     const region = p?.regions.find((r) => r.id === regionId)
     if (!p || !region) return
+    if (region.typedId) return // dictated maths is read from its own text, never by handwriting recognition
     // a circled / ticked printed option on a question paper is the student's answer: no model needed
     const opt = chosenOption(p, region)
     if (opt) {
@@ -482,6 +487,11 @@ export function useNova(o: Options) {
       if (extra?.exam) {
         // a printed question: the student's latest working under it (if any) is the current step
         if (extra.workRegionId && p1.regions.some((r) => r.id === extra.workRegionId)) currentId = extra.workRegionId
+      } else if (intent === 'ask' && !sel && FOLLOW_UP.test(question) && lastTeaching.current?.pageId === p1.id) {
+        // "I still don't understand" / "why?": the same question as the last teaching turn, even if another line was written since
+        const lt = lastTeaching.current
+        problemId = lt.problemId && p1.regions.some((r) => r.id === lt.problemId) ? lt.problemId : undefined
+        currentId = lt.currentId && p1.regions.some((r) => r.id === lt.currentId) ? lt.currentId : undefined
       } else if (intent === 'ask' && !sel) {
         // a typed/spoken question with nothing selected: ground it in the page's problem and the latest working, if any
         // (the tutor answers off-topic questions directly and ignores this context)
@@ -506,6 +516,7 @@ export function useNova(o: Options) {
         }
       }
       const anchorId = currentId ?? problemId
+      if (intent !== 'plot' && intent !== 'check') lastTeaching.current = { pageId: p1.id, problemId, currentId }
       if (!anchorId && !question.trim()) {
         setStatus({ state: 'notice', message: 'Write something first, or select a line, then ask.' })
         return
@@ -722,9 +733,12 @@ export function useNova(o: Options) {
       }
     }
     if (objects.length) opts.current.onBatchApplied(objects.length, ctx.requestId)
-    if (opts.current.speechEnabled || speakReplies.current.delete(ctx.requestId)) {
+    // asked by voice → answered aloud (unless spoken replies are muted); "always speak" reads every reply.
+    // The key is the reply's turn, so its chat bubble shows Play/Stop; a blocked or failed voice leaves the text and page.
+    const askedByVoice = speakReplies.current.delete(ctx.requestId)
+    if (opts.current.speechEnabled || (askedByVoice && voiceRepliesOn())) {
       const sp = actions.find((a) => a.type === 'speak') as Extract<TutorAction, { type: 'speak' }> | undefined
-      speak(sp?.text ?? res.explanation, ctx.requestId)
+      void speak(sp?.text ?? res.explanation, `turn:${now}`)
     }
   }
 

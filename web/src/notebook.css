@@ -134,3 +134,32 @@
 
 /* instant rule-based hint beside a wrong mark: one short line, never over the student's work */
 .ink-hint { position: absolute; z-index: 6; max-width: 240px; padding: 3px 8px; border-radius: 8px; font-size: 12px; line-height: 1.3; background: var(--surface, #fff); color: var(--ink, #222); border: 1px solid rgba(180, 55, 47, .35); box-shadow: 0 1px 4px rgba(0,0,0,.08); pointer-events: none; }
+
+/* voice: one control strip for Ask and Write-on-page */
+.voice-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 12px 8px; font-size: 13px; color: var(--nv-text-2, #555); }
+.voice-bar .vb-btn { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--nv-hair, #d8dbe0); background: var(--nv-surface, #fff); border-radius: 999px; padding: 4px 10px; font: inherit; cursor: pointer; }
+.voice-bar .vb-btn.strong, .voice-bar .vb-btn.mic { border-color: var(--nv-accent, #5b4df0); color: var(--nv-accent, #5b4df0); }
+.voice-bar .vb-btn svg { width: 15px; height: 15px; }
+.voice-level { width: 46px; height: 6px; border-radius: 3px; background: var(--nv-line, #e4e6ea); overflow: hidden; }
+.voice-level i { display: block; height: 100%; background: var(--nv-accent, #5b4df0); transition: width .08s linear; }
+.voice-error { flex-basis: 100%; color: #b4372f; line-height: 1.35; }
+.voice-engine { flex-basis: 100%; font-size: 11px; opacity: .7; }
+.speak-msg { margin-top: 4px; font-size: 12px; color: var(--nv-text-2, #555); }
+.voice-toggle { font-size: 15px; }
+
+/* Write on page (dictation) */
+.dictate-body { display: flex; flex-direction: column; gap: 6px; padding: 8px 14px; overflow: auto; flex: 1; }
+.dictate-body textarea, .dictate-input { width: 100%; box-sizing: border-box; font: inherit; border: 1px solid var(--nv-hair, #d8dbe0); border-radius: 10px; padding: 8px 10px; background: var(--nv-surface, #fff); color: inherit; }
+.dictate-label { font-size: 12px; color: var(--nv-text-2, #666); }
+.dictate-preview { display: flex; flex-direction: column; gap: 8px; }
+.dictate-math { font: 26px "Cambria Math", "STIX Two Math", "Times New Roman", serif; padding: 10px 12px; border-radius: 10px; background: var(--nv-glass, #f6f7fb); }
+.dictate-q { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; }
+.dictate-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--nv-hair, #e4e6ea); }
+.ob-dictate { display: inline-flex; align-items: center; gap: 4px; }
+
+/* the student's dictated maths on the page */
+.typed-block { position: absolute; white-space: nowrap; font-family: "Cambria Math", "STIX Two Math", "Times New Roman", serif; color: #1f2a44; line-height: 1.35; padding: 0 6px; border-radius: 6px; cursor: pointer; pointer-events: auto; }
+.typed-block:hover, .typed-block.selected { background: rgba(91, 77, 240, .08); outline: 1px dashed rgba(91, 77, 240, .45); }
+.typed-block .tb-tools { position: absolute; left: 0; top: -30px; display: flex; gap: 4px; font: 12px system-ui, sans-serif; }
+.typed-block .tb-tools button { border: 1px solid #d8dbe0; background: #fff; border-radius: 999px; padding: 2px 8px; cursor: pointer; }
+.typed-block input { font: inherit; width: 100%; min-width: 220px; border: 1px solid #5b4df0; border-radius: 6px; padding: 0 4px; }

@@ -213,3 +213,9 @@ Secrets: `server/.env`. Speech model: `server/models/` (`scripts/setup_speech.py
 - **Beginner worked solutions** (2026-10-31): linear equations are solved with explained steps (server maths/steps.py explained_steps → /auto notes + moves). On the page each moved term is red, a red curved arrow runs from where it was to where it landed (side-aware across =), a thin handwritten note says why ("+2 moves across = and becomes -2", "11 - 2 = 9"), final answer red. Client: handwriting/explain.ts; notes are a separate thin-pen ink object (id suffix :why).
 - **Notebooks screen** (2026-10-31): real page previews on every tile (PageThumb), a large "Continue where you left off" card (preview, first lines NOVA read, ✓/✗ counts, Continue writing), New notebook + Import a question paper cards. Whole UI one step bigger (60px top bar, 58px toolbar, 22px icons).
 - **Solve button = explained solution** (2026-10-31): the readback/menu Solve on a linear equation now calls /auto (forced) and writes the same arrowed, noted solution as auto-answer (useNova.solveHere); other equations still go to the tutor. Non-whole answers end with an x ≈ decimal line.
+
+## Voice + dictation (2026-11-24, branch voice-dictation; local only, partly verified)
+- Shared voice session (pause/resume/stop/cancel, drafts persist, retry kept audio); offline faster-whisper preferred (works in Brave), model found in main checkout; /capabilities honest.
+- "Write" toolbar mic: spoken maths -> editable preview -> inserted as student text block (undo/redo/reload/export), never solved.
+- Spoken replies with Play/Stop, mute toggle, maths read naturally; follow-ups stay on last question; Explain writes expression + rule; full solution ends on engine-checked value.
+- Verified: server 258 + web 79 tests. NOT yet verified: Brave/browser journey with audio, real mic/speaker.

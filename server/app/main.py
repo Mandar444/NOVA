@@ -37,6 +37,9 @@ async def lifespan(_: FastAPI):
 
     if not os.environ.get("VERCEL"):
         threading.Thread(target=warm_up, daemon=True).start()  # import SymPy in the worker before the first request
+        from .speech.transcriber import transcriber
+
+        threading.Thread(target=transcriber.warm, daemon=True).start()  # speech model loads off the request path
     yield
     await provider.aclose()
 

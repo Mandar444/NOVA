@@ -4,7 +4,7 @@
 
 import { hashString, strokeBounds, union } from './geometry'
 import { shortId } from './ids'
-import type { DocLine, CheckResult, Notebook, NotebookDoc, Page, Paper, PaperQuestion, PaperTest, Reading, Rect, Region, Stroke, TutorObject, Turn } from './types'
+import type { DocLine, CheckResult, Notebook, NotebookDoc, Page, Paper, PaperQuestion, PaperTest, Reading, Rect, Region, Stroke, TutorObject, Turn, TypedBlock } from './types'
 import { SCHEMA_VERSION } from './types'
 
 export const PAGE_W = 1200
@@ -15,6 +15,7 @@ const HISTORY_LIMIT = 40
 interface Snapshot {
   strokes: Stroke[]
   regions: Region[]
+  typed?: TypedBlock[]
 }
 
 export interface DocState {
@@ -53,6 +54,9 @@ export type DocAction =
   | { type: 'ensureSize'; pageId: string; width: number; height: number }
   | { type: 'pageMeta'; pageId: string; bgState: Page['bgState'] | null; bgError?: string; docText?: DocLine[] }
   | { type: 'patchQuestion'; testId: string; questionId: string; patch: Partial<PaperQuestion> }
+  | { type: 'addTyped'; pageId: string; block: TypedBlock; regionId: string; asProblem?: boolean }
+  | { type: 'editTyped'; pageId: string; id: string; text: string; display: string; w: number }
+  | { type: 'deleteTyped'; pageId: string; id: string }
 
 export function newPage(notebookId: string, title: string, opts: Partial<Page> = {}): Page {
   return {
@@ -108,6 +112,15 @@ function regionFromStrokes(page: Page, id: string, strokeIds: string[], origin: 
   return r
 }
 
+export function typedHash(b: Pick<TypedBlock, 'id' | 'text' | 'x' | 'y' | 'w' | 'h'>): string {
+  return hashString(JSON.stringify({ typed: b.id, text: b.text, crop: [b.x, b.y, b.w, b.h].map((v) => Math.round(v)) }))
+}
+
+/** A dictated block is read from its own text: an accepted reading, written by the student, never sent for OCR. */
+export function typedReading(b: TypedBlock, revision = 0): Reading {
+  return { rawText: b.text, alternatives: [], needsClarification: false, status: 'expression', acceptedText: b.text, state: 'accepted', sourceHash: typedHash(b), interpretationRevision: revision + 1, model: b.source }
+}
+
 /** Very large single strokes (scribbles, arrows, drawings) are never merged into a line of writing. */
 export function isLargeStroke(b: Rect): boolean {
   return b.h > 320 || b.w > 720
@@ -135,7 +148,7 @@ export function findRegionFor(page: Page, stroke: Stroke): Region | undefined {
   const last = page.strokes[page.strokes.length - 1]
   if (last && stroke.createdAt - last.createdAt < 2500) {
     const lastRegion = page.regions.find((r) => r.sourceStrokeIds.includes(last.id))
-    if (lastRegion && !isLargeStroke(lastRegion.bounds)) {
+    if (lastRegion && !isLargeStroke(lastRegion.bounds) && !lastRegion.typedId) {
       const h = lineHeight(lastRegion)
       const zone = { x: lastRegion.bounds.x - 1.2 * h, y: lastRegion.bounds.y - 0.6 * h, w: lastRegion.bounds.w + 2.4 * h, h: lastRegion.bounds.h + 1.2 * h }
       const cx = b.x + b.w / 2, cy = b.y + b.h / 2
@@ -145,7 +158,7 @@ export function findRegionFor(page: Page, stroke: Stroke): Region | undefined {
   let best: Region | undefined
   let bestScore = 0
   for (const r of page.regions) {
-    if (isLargeStroke(r.bounds)) continue
+    if (isLargeStroke(r.bounds) || r.typedId) continue // ink never joins a dictated block
     const h = lineHeight(r)
     const pad = Math.max(14, Math.min(60, 0.4 * h))
     const band = { x: r.bounds.x, y: r.bounds.y - pad, w: r.bounds.w, h: r.bounds.h + 2 * pad }
@@ -184,6 +197,7 @@ function mergeFragments(page: Page, hostId: string): Region[] {
 
 /** Dots, specks and tiny ticks: not worth sending for reading. */
 export function isTinyRegion(page: Page, r: Region): boolean {
+  if (r.typedId) return false
   if (Math.max(r.bounds.w, r.bounds.h) < 18) return true
   const ids = new Set(r.sourceStrokeIds)
   let length = 0
@@ -197,8 +211,14 @@ export function isTinyRegion(page: Page, r: Region): boolean {
 /** Recompute region geometry and drop everything derived from content that changed. */
 function reconcile(page: Page): Page {
   const strokeIds = new Set(page.strokes.map((s) => s.id))
+  const typedById = new Map((page.typed ?? []).map((b) => [b.id, b]))
   const regions: Region[] = []
   for (const r of page.regions) {
+    if (r.typedId) {
+      const b = typedById.get(r.typedId)
+      if (b) regions.push({ ...r, sourceStrokeIds: [], bounds: { x: b.x, y: b.y, w: b.w, h: b.h }, sourceHash: typedHash(b) })
+      continue
+    }
     const ids = r.sourceStrokeIds.filter((id) => strokeIds.has(id))
     if (!ids.length) continue
     regions.push(regionFromStrokes(page, r.id, ids, r.origin, r.createdAt))
@@ -209,6 +229,8 @@ function reconcile(page: Page): Page {
     const r = byId.get(rid)
     if (r && r.sourceHash === reading.sourceHash) readings[rid] = reading
   }
+  // a dictated block always has its reading: its own text (after undo/redo/edit too)
+  for (const r of regions) if (r.typedId && !readings[r.id]) readings[r.id] = typedReading(typedById.get(r.typedId)!, page.readings[r.id]?.interpretationRevision ?? 0)
   // a check is only valid while the problem reading it was made against is unchanged
   for (const [rid, reading] of Object.entries(readings)) {
     if (!reading.check) continue
@@ -240,7 +262,7 @@ function touch(state: DocState, pageId: string, page: Page, extra: Partial<DocSt
 }
 
 function pushUndo(state: DocState, pageId: string, page: Page) {
-  const stack = [...(state.undo[pageId] ?? []), { strokes: page.strokes, regions: page.regions }].slice(-UNDO_LIMIT)
+  const stack = [...(state.undo[pageId] ?? []), { strokes: page.strokes, regions: page.regions, typed: page.typed }].slice(-UNDO_LIMIT)
   return { undo: { ...state.undo, [pageId]: stack }, redo: { ...state.redo, [pageId]: [] } }
 }
 
@@ -275,6 +297,44 @@ export function docReducer(state: DocState, action: DocAction): DocState {
       })
     }
 
+    case 'addTyped': {
+      const page = state.doc.pages[action.pageId]
+      if (!page || (page.typed ?? []).some((b) => b.id === action.block.id)) return state // inserted once, even if dispatched twice
+      const b = action.block
+      return contentChange(state, action.pageId, (p) => {
+        const region: Region = { id: action.regionId, bounds: { x: b.x, y: b.y, w: b.w, h: b.h }, sourceStrokeIds: [], sourceHash: typedHash(b), origin: 'explicit', createdAt: b.createdAt, typedId: b.id }
+        const grow = (edge: number, size: number) => (edge > size - 400 ? Math.ceil((edge + 800) / 400) * 400 : size)
+        return {
+          ...p,
+          typed: [...(p.typed ?? []), b],
+          regions: [...p.regions, region],
+          readings: { ...p.readings, [region.id]: typedReading(b) },
+          problemRegionId: action.asProblem && !p.problemRegionId ? region.id : p.problemRegionId,
+          height: grow(b.y + b.h, p.height),
+          width: grow(b.x + b.w, p.width),
+        }
+      })
+    }
+
+    case 'editTyped': {
+      const page = state.doc.pages[action.pageId]
+      const old = page?.typed?.find((b) => b.id === action.id)
+      const text = action.text.trim().slice(0, 300)
+      if (!page || !old || !text || (text === old.text && action.display === old.display)) return state
+      return contentChange(state, action.pageId, (p) => {
+        const b = { ...old, text, display: action.display, w: action.w }
+        const rid = p.regions.find((r) => r.typedId === b.id)?.id
+        const prev = rid ? p.readings[rid] : undefined
+        return { ...p, typed: (p.typed ?? []).map((x) => (x.id === b.id ? b : x)), readings: rid ? { ...p.readings, [rid]: typedReading(b, prev?.interpretationRevision ?? 0) } : p.readings }
+      })
+    }
+
+    case 'deleteTyped': {
+      const page = state.doc.pages[action.pageId]
+      if (!page?.typed?.some((b) => b.id === action.id)) return state
+      return contentChange(state, action.pageId, (p) => ({ ...p, typed: (p.typed ?? []).filter((b) => b.id !== action.id) }))
+    }
+
     case 'eraseStrokes': {
       const ids = new Set(action.ids)
       const page = state.doc.pages[action.pageId]
@@ -290,9 +350,9 @@ export function docReducer(state: DocState, action: DocAction): DocState {
       const stack = from[action.pageId] ?? []
       if (!page || !stack.length) return state
       const snap = stack[stack.length - 1]
-      const next = reconcile({ ...page, strokes: snap.strokes, regions: snap.regions, contentRevision: page.contentRevision + 1 })
+      const next = reconcile({ ...page, strokes: snap.strokes, regions: snap.regions, typed: snap.typed ?? [], contentRevision: page.contentRevision + 1 })
       const fromNext = { ...from, [action.pageId]: stack.slice(0, -1) }
-      const toNext = { ...to, [action.pageId]: [...(to[action.pageId] ?? []), { strokes: page.strokes, regions: page.regions }] }
+      const toNext = { ...to, [action.pageId]: [...(to[action.pageId] ?? []), { strokes: page.strokes, regions: page.regions, typed: page.typed }] }
       return touch(state, action.pageId, next, action.type === 'undo' ? { undo: fromNext, redo: toNext } : { redo: fromNext, undo: toNext })
     }
 
@@ -305,7 +365,7 @@ export function docReducer(state: DocState, action: DocAction): DocState {
       if (same) return state
       const regions = page.regions
         .map((r) => ({ ...r, sourceStrokeIds: r.sourceStrokeIds.filter((id) => !chosen.has(id)) }))
-        .filter((r) => r.sourceStrokeIds.length)
+        .filter((r) => r.sourceStrokeIds.length || r.typedId)
       regions.push({ id: action.regionId, bounds: { x: 0, y: 0, w: 0, h: 0 }, sourceStrokeIds: action.strokeIds, sourceHash: '', origin: 'explicit', createdAt: Date.now() })
       const next = reconcile({ ...page, regions, selectionRevision: page.selectionRevision + 1 })
       return touch(state, action.pageId, next, pushUndo(state, action.pageId, page))

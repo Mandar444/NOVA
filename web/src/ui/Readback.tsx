@@ -74,6 +74,7 @@ export function ReadbackLayer({ page, view, phases, selectedRegionId, hoveredReg
         const reveal = selected || open === region.id || hoveredRegionId === region.id || editing?.id === region.id || (!canHover && latestRegion === region.id && !answered(region.id))
         const needsYou = reading?.state === 'needs_clarification' || phase?.phase === 'failed'
         if (!reveal && !needsYou) return null // quiet page: details appear when you point at a line
+        if (region.typedId && !selected && open !== region.id) return null // dictated maths shows itself; help appears when selected
         // dots/specks and big drawings with no maths get no label at all
         if (!selected && (isTinyRegion(page, region) || (reading?.status === 'none' && isLargeStroke(region.bounds)))) return null
         const label = (() => {
