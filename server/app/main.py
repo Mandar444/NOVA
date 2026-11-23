@@ -41,6 +41,7 @@ async def lifespan(_: FastAPI):
     await provider.aclose()
 
 
+log = logging.getLogger("nova.api")
 app = FastAPI(title="NOVA", version="0.1.0", lifespan=lifespan, docs_url="/api/docs", openapi_url="/api/openapi.json")
 @app.middleware("http")
 async def access_gate(request, call_next):
@@ -49,17 +50,39 @@ async def access_gate(request, call_next):
 
     from fastapi.responses import JSONResponse
 
+    import time as _time
+
+    from .timing import CURRENT, RequestTiming
+
     code = settings.access_code
     path = request.url.path
     if code and path.startswith("/api/") and path != "/api/v1/capabilities":
         given = request.headers.get("x-nova-access", "")
         if not hmac.compare_digest(given.encode(), code.encode()):
             return JSONResponse(status_code=401, content={"error": {"code": "ACCESS_REQUIRED", "message": "Enter the NOVA access code to use this test site.", "retryable": True}})
-    return await call_next(request)
+    if not path.startswith("/api/v1/") or path == "/api/v1/capabilities":
+        return await call_next(request)
+    from .timing import DEADLINE
+
+    timing = RequestTiming()
+    token = CURRENT.set(timing)
+    budget = request.headers.get("x-nova-deadline-ms", "")
+    dtoken = DEADLINE.set(_time.monotonic() + max(0, min(int(budget), 600_000)) / 1000) if budget.isdigit() else None
+    started = _time.perf_counter()
+    try:
+        response = await call_next(request)
+    finally:
+        CURRENT.reset(token)
+        if dtoken is not None:
+            DEADLINE.reset(dtoken)
+    total = int((_time.perf_counter() - started) * 1000)
+    response.headers["X-Nova-Timing"] = f"total={total};provider={timing.provider_ms};calls={timing.calls};timeouts={timing.timeouts}"
+    log.info("timing %s total_ms=%d provider_ms=%d provider_calls=%d timeouts=%d bytes_in=%s", path, total, timing.provider_ms, timing.calls, timing.timeouts, request.headers.get("content-length", "?"))
+    return response
 
 
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(settings.allowed_hosts) + ["testserver"])
-app.add_middleware(CORSMiddleware, allow_origins=list(settings.allowed_origins), allow_methods=["GET", "POST"], allow_headers=["Content-Type", "X-Nova-Access"])
+app.add_middleware(CORSMiddleware, allow_origins=list(settings.allowed_origins), allow_methods=["GET", "POST"], allow_headers=["Content-Type", "X-Nova-Access", "X-Nova-Deadline-Ms"], expose_headers=["X-Nova-Timing"])
 app.add_exception_handler(ApiError, api_error_handler)  # type: ignore[arg-type]
 app.add_exception_handler(RequestValidationError, validation_error_handler)  # type: ignore[arg-type]
 app.include_router(router)

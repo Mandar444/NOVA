@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import io
 import time
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, File, Form, UploadFile
+import asyncio
+from fastapi import APIRouter, File, Form, Request, UploadFile
 from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel
 
@@ -53,6 +54,7 @@ async def capabilities() -> Capabilities:
             "maxQuestionChars": MAX_QUESTION_CHARS, "maxHistoryTurns": MAX_HISTORY_TURNS, "maxTurnChars": MAX_TURN_CHARS,
             "maxActions": MAX_ACTIONS, "maxAudioBytes": MAX_AUDIO_BYTES, "maxAudioSeconds": MAX_AUDIO_SECONDS,
             "providerTimeoutS": settings.provider_timeout_s,
+            "interactiveDeadlineMs": settings.interactive_deadline_s * 1000,
         },
         provider={
             "name": "BharatCode",
@@ -118,16 +120,35 @@ async def connection_test(body: ConnectionTest) -> dict:
     return result
 
 
+async def _until_disconnect(request: Request, aw: Any, rid: str) -> Any:
+    """Run the work, but stop it when the client disconnects (Stop, a newer request, a deadline): an abandoned request
+    must not keep a provider call running."""
+    task = asyncio.ensure_future(aw)
+    try:
+        while True:
+            done, _ = await asyncio.wait({task}, timeout=0.4)
+            if done:
+                return task.result()
+            if await request.is_disconnected():
+                task.cancel()
+                raise ApiError("CANCELLED", "The request was cancelled.", rid, retryable=False)
+    finally:
+        if not task.done():
+            task.cancel()
+
+
 @router.post("/recognize", response_model=RecognizeResponse)
-async def recognize(req: RecognizeRequest) -> RecognizeResponse:
+async def recognize(req: RecognizeRequest, request: Request) -> RecognizeResponse:
     fp = cache.fingerprint("recognize", req.model_dump(mode="json"))
-    return await cache.run(str(req.context.requestId), fp, lambda: services.recognize(req))
+    rid = str(req.context.requestId)
+    return await _until_disconnect(request, cache.run(rid, fp, lambda: services.recognize(req)), rid)
 
 
 @router.post("/tutor", response_model=TutorResponse)
-async def tutor(req: TutorRequest) -> TutorResponse:
+async def tutor(req: TutorRequest, request: Request) -> TutorResponse:
     fp = cache.fingerprint("tutor", req.model_dump(mode="json"))
-    return await cache.run(str(req.context.requestId), fp, lambda: services.tutor(req))
+    rid = str(req.context.requestId)
+    return await _until_disconnect(request, cache.run(rid, fp, lambda: services.tutor(req)), rid)
 
 
 @router.post("/check", response_model=CheckResponse)
@@ -165,10 +186,11 @@ async def practice(req: PracticeRequest) -> PracticeResponse:
 
 
 @router.post("/auto", response_model=AutoResponse)
-async def auto(req: AutoRequest) -> AutoResponse:
+async def auto(req: AutoRequest, request: Request) -> AutoResponse:
     """Model-free reaction to a freshly read line: write the answer, mark it right/wrong, or do nothing."""
-    diagram = decode_png(req.diagramPng, "diagramPng", str(req.context.requestId)) if req.diagramPng else None
-    r = await services.auto(req.text, req.problem, req.autoAnswer, diagram)
+    rid = str(req.context.requestId)
+    diagram = decode_png(req.diagramPng, "diagramPng", rid) if req.diagramPng else None
+    r = await _until_disconnect(request, services.auto(req.text, req.problem, req.autoAnswer, diagram), rid)
     return AutoResponse(context=req.context, **r)
 
 

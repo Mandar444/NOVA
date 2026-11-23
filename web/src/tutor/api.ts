@@ -1,3 +1,4 @@
+import { parseTiming } from './trace'
 import type { CheckResult, PlotData, TutorAction } from '../notebook/types'
 
 export const CLIENT_DEADLINE_MS = 118_000 // the server gives the model up to 110 s
@@ -81,6 +82,7 @@ async function callOnce<T>(path: string, init: RequestInit, signal?: AbortSignal
     try {
       res = await fetch(path, { ...init, signal: ctl.signal })
     } catch (e) {
+      if (signal?.aborted && signal.reason?.name === 'TimeoutError') throw new ApiFailure('TIMEOUT', signal.reason.message || 'NOVA took too long to read this line. Your ink is safe.', true)
       if (signal?.aborted) throw new ApiFailure('CANCELLED', 'Request cancelled.', false)
       if ((e as DOMException)?.name === 'TimeoutError' || ctl.signal.reason?.name === 'TimeoutError') throw new ApiFailure('TIMEOUT', 'NOVA took too long to answer. Your ink is safe.', true)
       throw new ApiFailure('NETWORK', 'Cannot reach the NOVA server. Is it running?', true)
@@ -96,6 +98,7 @@ async function callOnce<T>(path: string, init: RequestInit, signal?: AbortSignal
       if (err) throw new ApiFailure(err.code, err.message, err.retryable, res.status)
       throw new ApiFailure('HTTP_' + res.status, `Server error ${res.status}.`, res.status >= 500, res.status)
     }
+    if (body && typeof body === 'object') (body as { _timing?: Record<string, number> })._timing = parseTiming(res.headers.get('x-nova-timing'))
     return body as T
   } finally {
     clearTimeout(timer)
@@ -103,7 +106,18 @@ async function callOnce<T>(path: string, init: RequestInit, signal?: AbortSignal
   }
 }
 
-const json = (body: unknown): RequestInit => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+const json = (body: unknown, budgetMs?: number): RequestInit => ({
+  method: 'POST',
+  // the server never spends longer than what is left of the attempt's budget
+  headers: budgetMs ? { 'Content-Type': 'application/json', 'X-Nova-Deadline-Ms': String(Math.max(0, Math.floor(budgetMs))) } : { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body),
+})
+
+/** One interactive attempt (write a line → its reading and NOVA's answer), end to end. The server may override it. */
+export let INTERACTIVE_DEADLINE_MS = 30_000
+export function setInteractiveDeadline(ms: number | undefined) {
+  if (ms && ms >= 5_000 && ms <= 600_000) INTERACTIVE_DEADLINE_MS = ms
+}
 
 export interface Capabilities {
   version: string
@@ -153,14 +167,14 @@ export interface TutorPayload {
 export const api = {
   capabilities: () => call<Capabilities>('/api/v1/capabilities', { method: 'GET' }),
   testConnection: (vision: boolean) => call<Record<string, unknown>>('/api/v1/connection/test', json({ vision })),
-  recognize: (body: { context: RequestContext; regionPng: string; regionWidth: number; regionHeight: number }, signal?: AbortSignal) =>
-    call<RecognizeResult>('/api/v1/recognize', json(body), signal),
+  recognize: (body: { context: RequestContext; regionPng: string; regionWidth: number; regionHeight: number }, signal?: AbortSignal, budgetMs?: number) =>
+    call<RecognizeResult>('/api/v1/recognize', json(body, budgetMs), signal),
   tutor: (body: TutorPayload, signal?: AbortSignal) => call<TutorResult>('/api/v1/tutor', json(body), signal),
   check: (body: { context: RequestContext; problem: string; current: string; confirmed: boolean }) =>
     call<{ status: CheckResult['status']; message: string; problemSolution?: string; currentSolution?: string; context: RequestContext }>('/api/v1/check', json(body)),
   plot: (body: { context: RequestContext; expression: string }) => call<{ plot: PlotData; context: RequestContext }>('/api/v1/plot', json(body)),
-  auto: (body: { context: RequestContext; text: string; problem?: string | null; autoAnswer: boolean; diagramPng?: string }, signal?: AbortSignal) =>
-    call<{ context: RequestContext; kind: 'answer' | 'mark' | 'solution' | 'none'; verdict: 'correct' | 'incorrect' | 'equivalent' | 'different' | 'solved' | 'none'; answer?: string | null; steps?: string[]; notes?: string[]; moves?: ({ find: string; becomes: string } | null)[]; suggest?: 'graph' | 'solve' | 'none'; message?: string | null }>('/api/v1/auto', json(body), signal),
+  auto: (body: { context: RequestContext; text: string; problem?: string | null; autoAnswer: boolean; diagramPng?: string }, signal?: AbortSignal, budgetMs?: number) =>
+    call<{ context: RequestContext; kind: 'answer' | 'mark' | 'solution' | 'none'; verdict: 'correct' | 'incorrect' | 'equivalent' | 'different' | 'solved' | 'none'; answer?: string | null; steps?: string[]; notes?: string[]; moves?: ({ find: string; becomes: string } | null)[]; suggest?: 'graph' | 'solve' | 'none'; message?: string | null }>('/api/v1/auto', json(body, budgetMs), signal),
   paperAnalyze: (body: { requestId: string; pageIndex: number; png: string; lines: { id: string; text: string }[] }) =>
     call<{ pageIndex: number; latencyMs: number; questions: { number: string; text: string; lineIds: string[]; bbox: number[]; kind: string; options: string[]; answer: string; answerVerified: boolean; corrected: boolean }[] }>('/api/v1/paper/analyze', json(body)),
   practice: (body: { requestId: string; topic?: string; example?: string; count: number }) =>

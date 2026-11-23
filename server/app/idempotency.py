@@ -17,6 +17,7 @@ MAX_ENTRIES = 256
 class IdempotencyCache:
     def __init__(self) -> None:
         self._entries: dict[str, tuple[str, float, asyncio.Task]] = {}
+        self._waiters: dict[str, int] = {}
 
     @staticmethod
     def fingerprint(route: str, payload: Any) -> str:
@@ -37,18 +38,37 @@ class IdempotencyCache:
             fp, _, task = entry
             if fp != fingerprint:
                 raise ApiError("CONFLICT", "This requestId was already used with a different payload.", request_id, retryable=False)
-            return await asyncio.shield(task)
+            return await self._wait(request_id, task)
         task = asyncio.ensure_future(factory())
         self._entries[request_id] = (fingerprint, time.monotonic(), task)
         try:
-            return await asyncio.shield(task)
+            return await self._wait(request_id, task)
         except BaseException:
             # failures are not cached, so an explicit retry with the same id re-runs
-            self._entries.pop(request_id, None)
+            if not task.done() or task.cancelled() or task.exception() is not None:
+                self._entries.pop(request_id, None)
             raise
+
+    async def _wait(self, request_id: str, task: asyncio.Task) -> Any:
+        """Await shared work; when the last waiter goes away (the client gave up), the work is cancelled, so an abandoned
+        request does not keep the provider busy."""
+        self._waiters[request_id] = self._waiters.get(request_id, 0) + 1
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            if self._waiters.get(request_id, 1) <= 1 and not task.done():
+                task.cancel()
+            raise
+        finally:
+            n = self._waiters.get(request_id, 1) - 1
+            if n <= 0:
+                self._waiters.pop(request_id, None)
+            else:
+                self._waiters[request_id] = n
 
     def clear(self) -> None:
         self._entries.clear()
+        self._waiters.clear()
 
 
 cache = IdempotencyCache()

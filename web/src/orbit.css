@@ -346,6 +346,8 @@ button:disabled { opacity: 0.35; }
   position: static; width: auto; flex: 1; max-height: none; min-height: 0; border: 0; border-radius: 0; box-shadow: none; background: transparent; padding-top: 0;
 }
 .notebook.side-open .ob-top { right: 416px; }
+/* the pages rail's header (title, New page) must not sit under the top capsule */
+.notebook.pages-open .ob-top:not(.phone) { left: 224px; }
 .notebook.tablet.side-open .ob-top { right: 396px; }
 .notebook.side-open .ob-dock.bottom { left: calc((100% - 400px) / 2); }
 .notebook.side-open .ob-top .ob-center { display: none; }

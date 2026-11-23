@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -15,6 +16,7 @@ import httpx
 
 from ..config import settings
 from ..errors import ApiError
+from ..timing import record_call, remaining_s
 
 log = logging.getLogger("nova.provider")
 
@@ -160,13 +162,25 @@ class BharatCodeClient:
         started = time.perf_counter()
         for attempt in range(2):
             body = builder(instructions, text, images, max_tokens, reasoning_off, effort, temperature)
+            t_call = time.perf_counter()
+            left = remaining_s()
+            if left is not None and left < 0.5:
+                record_call(0, timed_out=True)
+                raise ApiError("TIMEOUT", "NOVA ran out of time for this line.", request_id)
             try:
-                resp = await self._http().post(path, headers=self._headers(), json=body)
-            except httpx.TimeoutException:
+                if left is None:
+                    resp = await self._http().post(path, headers=self._headers(), json=body)
+                else:
+                    resp = await asyncio.wait_for(self._http().post(path, headers=self._headers(), json=body), timeout=min(settings.provider_timeout_s, left))
+            except (httpx.TimeoutException, asyncio.TimeoutError):
+                record_call(int((time.perf_counter() - t_call) * 1000), timed_out=True)
                 raise ApiError("TIMEOUT", "The model took too long to respond.", request_id)
             except httpx.HTTPError as e:
+                record_call(int((time.perf_counter() - t_call) * 1000))
                 raise ApiError("PROVIDER_ERROR", f"Could not reach BharatCode: {type(e).__name__}.", request_id)
-            if resp.status_code == 400 and (reasoning_off or effort or temperature is not None) and attempt == 0:
+            record_call(int((time.perf_counter() - t_call) * 1000))
+            left = remaining_s()
+            if resp.status_code == 400 and (reasoning_off or effort or temperature is not None) and attempt == 0 and (left is None or left > 3):
                 # some deployments reject optional fields; retry once without them
                 log.warning("provider 400 with optional fields; retrying without them: %s", resp.text[:300])
                 reasoning_off, effort, temperature = False, None, None

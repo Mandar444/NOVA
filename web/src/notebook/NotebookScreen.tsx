@@ -281,6 +281,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
   const commitStroke = (points: Point[]) => {
     const stroke: Stroke = { id: shortId('s'), points, colour, width, createdAt: Date.now(), author: 'student' }
     dispatch({ type: 'addStroke', pageId, stroke, newRegionId: shortId('r') })
+    try { performance.mark('nova-trace', { detail: { key: '', stage: 'pen-up' } }) } catch { /* no detail marks */ }
   }
 
   const onSelect = (sel: { rect?: Rect; lasso?: Point[]; tap?: Point }) => {
@@ -555,7 +556,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
     </button>
   )
   const statusPill = (compact = false) => (
-    <StatusPill compact={compact} status={nova.status} checked={page.regions.filter((r) => page.readings[r.id]?.state === 'accepted').length} onStop={nova.cancel} onDismiss={() => nova.setStatus({ state: 'idle' })} onIdleClick={() => setHistoryOpen((v) => !v)} />
+    <StatusPill compact={compact} status={nova.status.state === 'idle' && Object.values(nova.phases).some((x) => x.phase === 'recognizing') ? { state: 'working', message: 'Reading your line…' } : nova.status} checked={page.regions.filter((r) => page.readings[r.id]?.state === 'accepted').length} onStop={nova.cancel} onDismiss={() => nova.setStatus({ state: 'idle' })} onIdleClick={() => setHistoryOpen((v) => !v)} />
   )
   const busyOrError = nova.status.state === 'working' || nova.status.state === 'error' || nova.status.state === 'notice'
   const pageLabel = `${pageIndex + 1} / ${nb.orderedPageIds.length}`
@@ -647,7 +648,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
   return (
     <div
       ref={rootRef}
-      className={`notebook ${phone ? 'phone' : desktop ? 'desktop' : 'tablet'} ${focus ? 'focus' : ''} ${!focus && !phone && (ask || (testOpen && activeTest)) ? 'side-open' : ''}`}
+      className={`notebook ${phone ? 'phone' : desktop ? 'desktop' : 'tablet'} ${focus ? 'focus' : ''} ${!focus && !phone && (ask || (testOpen && activeTest)) ? 'side-open' : ''} ${pagesOpen && !focus && !phone ? 'pages-open' : ''}`}
       onPointerDown={() => menu && setMenu(null)}
       onPointerMove={(e) => {
         if (e.pointerType !== 'mouse') return

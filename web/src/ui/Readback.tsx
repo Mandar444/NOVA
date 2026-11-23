@@ -79,7 +79,7 @@ export function ReadbackLayer({ page, view, phases, selectedRegionId, hoveredReg
           if (phase?.phase === 'failed')
             return (
               <div className="readback failed">
-                Couldn't read this line. <button className="link" onClick={() => onRetry(region.id)}>Retry</button>
+                {phase.error && /busy|took too long|read this line in|time/i.test(phase.error) ? phase.error : phase.error && /could not reach|cannot reach/i.test(phase.error) ? "Couldn't reach the reading service. Your ink is safe." : "Couldn't read this line."} <button className="link" onClick={() => onRetry(region.id)}>Retry</button>
               </div>
             )
           if (!reading) return null

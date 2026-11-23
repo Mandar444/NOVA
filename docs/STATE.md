@@ -2,6 +2,15 @@
 
 _Last updated: 2026-11-18_
 
+## Handwriting latency incident (2026-11-23, branch `perf-latency` from `ui-orbit` @ 344b989; local only, not deployed)
+"3 + 2 =" took ~220 s. Traced one line from last pen-up to NOVA's answer (client `nova-trace` marks + server `X-Nova-Timing`).
+- Baseline (real BharatCode, before): pen-up→answer **92.2 s** = 2.0 s pause + **89.9 s provider** (1 vision call, 12 KB image, reasoning off) + 4 ms exact maths + render. No hidden SDK retries.
+- How 220 s happened: one read slot with no cancel, so a read of the half-written line held it for up to 110 s before the full line was read (another 110 s); a line with "?" or a problem on the page then went to a second model call (`solve_any`/`_answer_question`) with its own 110 s. Per-call timeouts, no total.
+- Fixes: one 30 s budget per line counted from the last change (`NOVA_INTERACTIVE_DEADLINE_S`, sent as `X-Nova-Deadline-Ms`; provider calls use what is left; the one 400-resend only if >3 s left). Editing a line cancels its in-flight read; two lines can be read at once; Stop cancels reads; server cancels work when the browser disconnects. Plain arithmetic (digits/operators/=/?) is finished by the exact engine only — never a model call. A doubtful digit in a line ending in "=" now asks (it used to be dropped and NOVA answered a guess). The status pill shows "Reading your line…", seconds and Stop. Timeout/busy/unreachable messages say why. Pages-rail header no longer hidden under the top capsule.
+- Simulated provider (1.5 s): add/sub/mul/wrong 3.6–3.9 s pen-up→answer, 1 provider call each; slow → stops at 30.0 s; busy → 2.1 s; unreachable → 4.1 s; edit during read → stale read cancelled in 0.7 s; Stop → idle in 32 ms, next line 3.6 s; page switch → read cancelled, nothing on new page; PDF analysing (20 s) → Page 1 answered in 3.6 s.
+- Real provider after the fix: 3 runs, all stopped at 30.0 s (provider ≥28 s, 1 call, no retry). **The provider dominates; ~5 s is not reached with BharatCode vision today.**
+- Tests: server 223 passed (new tests/test_latency.py), web 53 passed (new recognition/scheduler.test.ts), build ok. QA scripts: scratchpad qa/lat_trace.cjs, qa/lat_cases.cjs.
+
 ## Orbit UI, rebuilt to the boards (2026-11-23, later the same day)
 The first pass was judged too far from the design. Every screen was then rebuilt from the board source and compared side by side
 with a render of the board (scratchpad design_render/*.png): Home (laptop + phone), Notebook (laptop, tablet, phone), Ask, Question

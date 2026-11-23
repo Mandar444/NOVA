@@ -175,8 +175,9 @@ async def recognize(req: RecognizeRequest) -> RecognizeResponse:
         elif not raw and o_raw:
             status, raw, alts, needs = o_status, o_raw, o_alts, True
     alts = alts[:3]
-    if status == "incomplete":
+    if status == "incomplete" and not raw.rstrip().endswith("="):
         needs = False  # still being written: read it again when it is finished, don't interrupt
+    # a line ending in "=" is finished (it asks for the answer): a doubtful character there must be confirmed, not guessed
     if len(_norm_reading(raw)) <= 3 and "=" not in raw:
         needs = False  # a label on a diagram ("x", "A", "6", "40°"): never worth interrupting the student
     if needs and not alts:
@@ -980,9 +981,20 @@ async def _answer_question(q: str, problem: str) -> dict:
     return await solve_any(q, problem) or {"kind": "none"}
 
 
+_NUMERIC = re.compile(r"^[\d\s.,+\-−*/×÷^()=?]+$")
+
+
+def is_plain_arithmetic(t: str) -> bool:
+    """Digits and operators only ("3 + 2 =", "3 + 2 = ?", "12 ÷ 4 = 3"): the exact engine's job, never the model's."""
+    return bool(_NUMERIC.match(t)) and bool(re.search(r"\d", t)) and "=" in t
+
+
 async def auto(text: str, problem: str | None, auto_answer: bool, diagram: str | None = None) -> dict:
     """Exact maths first; if that can't help and the line is a question, NOVA's maths model solves it."""
     t = re.sub(r"\s+", " ", text).strip()
+    if is_plain_arithmetic(t):
+        # recognised arithmetic: the deterministic engine finishes or marks it; no second model call
+        return await _auto_exact(re.sub(r"\s*\?\s*$", "", t).strip(), None, auto_answer)
     if diagram and auto_answer and (_TASK.search(t) or _QUESTION.search(t)) and not _plain_equation(t):
         # a question next to a drawing (geometry): the exact engine can't see diagrams, the model reads it
         solved = await solve_any(t, problem, diagram)

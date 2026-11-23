@@ -10,7 +10,8 @@ import { renderRegion } from '../recognition/render'
 import { inflate, intersects, strokeBounds, union } from '../notebook/geometry'
 import { RecognitionScheduler, type ReadPhase } from '../recognition/scheduler'
 import { speak, stopSpeaking } from '../voice/speech'
-import { ApiFailure, api, type RequestContext, type TutorPayload, type TutorResult } from './api'
+import { trace } from './trace'
+import { ApiFailure, INTERACTIVE_DEADLINE_MS, api, type RequestContext, type TutorPayload, type TutorResult } from './api'
 import { placeBatch } from './layout'
 import { getLibrary } from '../handwriting/library'
 import { placeInk } from '../handwriting/place'
@@ -111,6 +112,8 @@ export function useNova(o: Options) {
   const tutorGen = useRef(0)
   const tutorAbort = useRef<AbortController | null>(null)
   const readAbort = useRef(new Set<AbortController>())
+  const readCtl = useRef(new Map<string, AbortController>()) // the in-flight read of each line
+  const lineDeadline = useRef(new Map<string, number>()) // when each line's attempt runs out (Date.now() ms)
   const lastEdited = useRef<string | null>(null)
   const anchorRects = useRef(new Map<string, Rect>()) // page-level requests: where on the page the answer belongs
   const speakReplies = useRef(new Set<string>()) // requests asked by voice: answer out loud
@@ -124,7 +127,7 @@ export function useNova(o: Options) {
     opts.current.penActive.current = false
   }
 
-  const readRegion = useCallback(async (regionId: string) => {
+  const readRegion = useCallback(async (regionId: string, changedAt: number = Date.now()) => {
     const p = page()
     const region = p?.regions.find((r) => r.id === regionId)
     if (!p || !region) return
@@ -138,17 +141,39 @@ export function useNova(o: Options) {
       opts.current.dispatch({ type: 'setReading', pageId: p.id, regionId, reading: { rawText: '', alternatives: [], needsClarification: false, status: 'none', state: 'readback_ready', sourceHash: region.sourceHash, interpretationRevision: 0 } })
       return
     }
+    const key = `${regionId}:${region.sourceHash}`
+    trace(key, 'read-start')
     const img = await renderRegion(p, region.sourceStrokeIds, region.bounds, p.docText ? null : opts.current.background.current) // printed paper text is not the student's writing
+    trace(key, 'img', { bytes: Math.round(img.png.length * 0.75), w: Math.round(img.crop.w), h: Math.round(img.crop.h) })
     const ctx = makeContext(p, region, p.readings[regionId])
     const ctl = new AbortController()
     readAbort.current.add(ctl)
+    readCtl.current.get(regionId)?.abort()
+    readCtl.current.set(regionId, ctl)
+    // one budget for the whole attempt, counted from the last change to the line (pause and queue included)
+    const deadline = changedAt + INTERACTIVE_DEADLINE_MS
+    lineDeadline.current.set(`${regionId}:${region.sourceHash}`, deadline)
+    const left = deadline - Date.now()
+    const outOfTime = new DOMException(`NOVA couldn't read this line in ${Math.round(INTERACTIVE_DEADLINE_MS / 1000)} s — the reading service is busy. Your ink is safe.`, 'TimeoutError')
+    const timer = setTimeout(() => { trace(key, 'deadline'); ctl.abort(outOfTime) }, Math.max(0, left))
     try {
-      const res = await api.recognize({ context: ctx, regionPng: img.png, regionWidth: Math.round(img.crop.w), regionHeight: Math.round(img.crop.h) }, ctl.signal)
+      if (left <= 500) {
+        trace(key, 'deadline')
+        throw new ApiFailure('TIMEOUT', outOfTime.message, true)
+      }
+      let res: Awaited<ReturnType<typeof api.recognize>>
+      try {
+        res = await api.recognize({ context: ctx, regionPng: img.png, regionWidth: Math.round(img.crop.w), regionHeight: Math.round(img.crop.h) }, ctl.signal, deadline - Date.now())
+      } catch (e) {
+        trace(key, 'rec-fail', { code: (e as ApiFailure)?.code })
+        throw e
+      }
+      trace(key, 'rec-end', { text: res.rawText, ...((res as { _timing?: Record<string, number> })._timing ?? {}) })
       await waitPenUp()
       if (!sameContext(res.context, ctx)) throw new ApiFailure('INVALID_MODEL_OUTPUT', 'Mismatched response.', true)
       const now = page()
       const cur = now?.regions.find((r) => r.id === regionId)
-      if (!now || now.id !== ctx.pageId || !cur || cur.sourceHash !== ctx.sourceHash) return // stale: ink changed, it will be re-read
+      if (!now || now.id !== ctx.pageId || !cur || cur.sourceHash !== ctx.sourceHash) { trace(key, 'stale-drop'); return } // stale: ink changed, it will be re-read
       // two independent reads agreed: accept it (the student can still Edit); disagreement asks the student
       const clear = !res.needsClarification && res.status !== 'none' && !!res.rawText
       const reading: Reading = {
@@ -166,7 +191,9 @@ export function useNova(o: Options) {
       opts.current.dispatch({ type: 'setReading', pageId: ctx.pageId, regionId, reading })
       if (clear) void react(regionId, ctx.sourceHash)
     } finally {
+      clearTimeout(timer)
       readAbort.current.delete(ctl)
+      if (readCtl.current.get(regionId) === ctl) readCtl.current.delete(regionId)
     }
   }, [])
 
@@ -186,10 +213,22 @@ export function useNova(o: Options) {
     }
     const problemText = problemId ? p.readings[problemId]?.acceptedText : undefined
     let res
+    const key = `${regionId}:${sourceHash}`
+    trace(key, 'auto-start')
     try {
       const diagramPng = await diagramNear(p, region).catch(() => undefined) // geometry: the drawing beside the question
-      res = await api.auto({ context: makeContext(p, region, p.readings[regionId]), text, problem: force && !isQuestion(text) ? null : (problemText ?? null), autoAnswer: force || opts.current.autoAnswer, diagramPng })
+      const budget = force ? INTERACTIVE_DEADLINE_MS : (lineDeadline.current.get(key) ?? Date.now() + INTERACTIVE_DEADLINE_MS) - Date.now()
+      if (budget <= 300) throw new ApiFailure('TIMEOUT', 'Out of time for this line.', true)
+      const autoCtl = new AbortController()
+      const autoTimer = setTimeout(() => autoCtl.abort(new DOMException('Out of time for this line.', 'TimeoutError')), budget)
+      try {
+        res = await api.auto({ context: makeContext(p, region, p.readings[regionId]), text, problem: force && !isQuestion(text) ? null : (problemText ?? null), autoAnswer: force || opts.current.autoAnswer, diagramPng }, autoCtl.signal, budget)
+      } finally {
+        clearTimeout(autoTimer)
+      }
+      trace(key, 'auto-end', { kind: res.kind, ...((res as { _timing?: Record<string, number> })._timing ?? {}) })
     } catch {
+      trace(key, 'auto-fail')
       return false // the reading is still shown; reacting is a bonus
     }
     await waitPenUp()
@@ -265,6 +304,7 @@ export function useNova(o: Options) {
       caption: res.message ?? undefined,
     }
     opts.current.dispatch({ type: 'applyTutorBatch', pageId: now.id, contentRevision: now.contentRevision, batchId: id, objects: [obj], turns: [], regionScoped: true })
+    trace(key, 'ink', { text: inkText })
     if (mark) {
       const status = (res.verdict === 'none' ? 'unsupported' : res.verdict) as NonNullable<Reading['check']>['status']
       opts.current.dispatch({ type: 'setCheck', pageId: now.id, regionId, sourceHash, check: { status, message: res.message ?? '', againstProblemId: problemId ?? regionId, problemText: problemText ?? text } })
@@ -276,7 +316,13 @@ export function useNova(o: Options) {
   const scheduler = useMemo(
     () =>
       new RecognitionScheduler({
-        run: (id) => readRegion(id),
+        run: (id, _auto, changedAt) => readRegion(id, changedAt),
+        cancel: (id) => readCtl.current.get(id)?.abort(new DOMException('replaced', 'AbortError')),
+        isFresh: (id) => {
+          const pg = page()
+          const r = pg?.regions.find((x) => x.id === id)
+          return !!r && pg?.readings[id]?.sourceHash === r.sourceHash
+        },
         onPhase: (id, phase, error) =>
           setPhases((prev) => {
             const next = { ...prev }
@@ -627,9 +673,10 @@ export function useNova(o: Options) {
   const cancel = useCallback(() => {
     tutorGen.current++
     tutorAbort.current?.abort()
+    scheduler.cancelAll() // and any reading in flight: Stop ends every wait
     stopSpeaking()
     setStatus({ state: 'idle' })
-  }, [])
+  }, [scheduler])
 
   /** The Solve button: a linear equation gets the explained solution (arrows, red moves, notes); anything else goes to the tutor. */
   /** One tap on Solve does everything: read the line if needed, graph a graph, otherwise write the worked answer. */

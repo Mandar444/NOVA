@@ -38,6 +38,8 @@ class Settings:
     base_url: str = field(default_factory=lambda: os.environ.get("BHARATCODE_BASE_URL", "https://bharatcode.ai/api/model/v1").rstrip("/"))
     model: str = field(default_factory=lambda: os.environ.get("NOVA_MODEL", "glm-5.3-flash"))
     provider_timeout_s: int = field(default_factory=lambda: _int("NOVA_PROVIDER_TIMEOUT_S", 110))
+    # one interactive attempt (a handwritten line: wait, read, answer), end to end, including any retry
+    interactive_deadline_s: int = field(default_factory=lambda: _int("NOVA_INTERACTIVE_DEADLINE_S", 30))
     max_output_tokens: int = field(default_factory=lambda: _int("NOVA_MAX_OUTPUT_TOKENS", 1200))
     host: str = field(default_factory=lambda: os.environ.get("NOVA_HOST", "127.0.0.1"))
     port: int = field(default_factory=lambda: _int("NOVA_PORT", 8010))

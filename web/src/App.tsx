@@ -4,6 +4,9 @@ import { NotebookScreen, type SaveStatus } from './notebook/NotebookScreen'
 import { getMeta, listNotebooks, loadNotebook, saveNotebook, setMeta } from './storage/db'
 import type { StartAction } from './ui/Home'
 import { Library } from './ui/Library'
+import { api, setInteractiveDeadline } from './tutor/api'
+
+void api.capabilities().then((c) => setInteractiveDeadline(Number(c.limits?.interactiveDeadlineMs))).catch(() => undefined)
 import { signOutTester, type Tester } from './account/tester'
 import { AssistConsent, DEFAULT_SETTINGS, SettingsDialog, type AppSettings } from './ui/Settings'
 import { HandwritingSetup } from './ui/HandwritingSetup'
