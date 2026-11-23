@@ -2,6 +2,17 @@
 
 _Last updated: 2026-11-18_
 
+## Orbit UI, rebuilt to the boards (2026-11-23, later the same day)
+The first pass was judged too far from the design. Every screen was then rebuilt from the board source and compared side by side
+with a render of the board (scratchpad design_render/*.png): Home (laptop + phone), Notebook (laptop, tablet, phone), Ask, Question
+paper + Test panel, Settings, Practice dialog. Styles: web/src/{home,notebook,testpanel,settings,practice}.css after orbit.css.
+New real data/settings behind design elements: 7-day progress (Progress.week), streak, practice sets in progress, Settings ›
+Show what NOVA read, Voice language (English / Hindi / Hinglish), handwriting progress, practice class/level/count (up to 15) and
+"allow help" per set. Design ink palette (navy default). Deviations kept on purpose: Explain / Full solution in the Test panel
+open after Finish (the server gives hints only during a test); answer space sits beside the printed question (the sheet is one
+image, so space cannot be inserted below a question); "This week › Progress" opens practice (there is no progress page).
+Not rebuilt yet: the interactive first-run walkthrough (Welcome board). Not tested on a physical device.
+
 ## Orbit UI (2026-11-23, branch `ui-orbit` from origin/main c065034; local only, not pushed)
 Design source: the "NOVA — New UI" Design canvas (17 boards). Grid paper, canvas drawing and NOVA's ink colour unchanged.
 Checks: server pytest 212 passed, web vitest 48 passed, tsc clean, build ok. Run locally: http://127.0.0.1:5180 (vite preview of

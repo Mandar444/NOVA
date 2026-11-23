@@ -720,7 +720,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
           </div>
           {!phone && <div className="ob-center">{statusPill()}</div>}
           {phone ? (
-            <button className="ob-ask" onPointerDown={(e) => e.stopPropagation()} onClick={() => openAsk(false)}><Icon.ask /> Ask</button>
+            <button className="ob-ask" onPointerDown={(e) => e.stopPropagation()} onClick={() => openAsk(false)}><Icon.chat /> Ask</button>
           ) : (
             <div className="ob-capsule ob-right" onPointerDown={(e) => e.stopPropagation()}>
               <button data-testid="assist-toggle" className={`ob-seg ob-assist ${settings.assist ? 'on' : ''}`} onClick={toggleAssist} aria-pressed={settings.assist} title="Read your writing automatically after a pause">
