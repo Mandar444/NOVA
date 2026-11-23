@@ -407,7 +407,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
       setTestOpen(true)
       void paper.importPaper(startAction.file)
     } else if (startAction.type === 'practice') {
-      void runPractice({ topic: startAction.topic })
+      void runPractice({ topic: startAction.topic, count: startAction.count, allowHelp: startAction.allowHelp })
     } else if (startAction.type === 'tip') {
       toast(startAction.text, { label: 'Got it', fn: () => undefined })
     } else {
@@ -417,7 +417,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
     onStartConsumed?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startAction])
-  const runPractice = async (p: { topic?: string; example?: string; count?: number }) => {
+  const runPractice = async (p: { topic?: string; example?: string; count?: number; allowHelp?: boolean }) => {
     setPracticeOpen(null)
     setTestOpen(false)
     const id = await paper.startPractice(p)

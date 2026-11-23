@@ -79,10 +79,10 @@ export default function App({ tester }: { tester?: Tester }) {
   }, [open, create])
 
   /** Practice from the library: in the "Practice" notebook (made the first time). */
-  const practice = useCallback(async (topic: string) => {
+  const practice = useCallback(async (topic: string, opts: { count?: number; allowHelp?: boolean } = {}) => {
     const existing = (await listNotebooks()).find((n) => n.title === 'Practice')
-    if (existing) return open(existing.id, { type: 'practice', topic })
-    await create({ type: 'practice', topic }, 'Practice')
+    if (existing) return open(existing.id, { type: 'practice', topic, ...opts })
+    await create({ type: 'practice', topic, ...opts }, 'Practice')
   }, [open, create])
 
   /** "Try this" on the library: in the notebook you were last writing in (a new one if there is none). */
@@ -144,7 +144,7 @@ export default function App({ tester }: { tester?: Tester }) {
   if (screen === 'library' || !state)
     return (
       <>
-        <Library tester={tester} onSwitchTester={() => { signOutTester(); location.reload() }} onOpen={(id) => void open(id)} onCreate={() => void create()} onImportPaper={(f) => void create({ type: 'pdf', file: f }, f.name.replace(/.pdf$/i, '').slice(0, 60))} onPractice={(t) => void practice(t)} onTry={(w) => void tryIt(w)} onSettings={() => setLibSettings('settings')} notify={setNotice} />
+        <Library tester={tester} onSwitchTester={() => { signOutTester(); location.reload() }} onOpen={(id) => void open(id)} onCreate={() => void create()} onImportPaper={(f) => void create({ type: 'pdf', file: f }, f.name.replace(/.pdf$/i, '').slice(0, 60))} onPractice={(t, o) => void practice(t, o)} onTry={(w) => void tryIt(w)} onSettings={() => setLibSettings('settings')} notify={setNotice} />
         {libSettings === 'settings' && (
           <SettingsDialog
             settings={settings}

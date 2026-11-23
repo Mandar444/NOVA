@@ -345,7 +345,7 @@ class PracticeRequest(Strict):
     requestId: UUID
     topic: Annotated[str, Field(max_length=80)] = ""
     example: Annotated[str, Field(max_length=300)] = ""
-    count: int = Field(default=5, ge=1, le=10)
+    count: int = Field(default=5, ge=1, le=15)
 
 
 class PracticeQuestion(BaseModel):

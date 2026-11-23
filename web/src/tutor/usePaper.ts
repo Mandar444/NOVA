@@ -239,7 +239,7 @@ export function usePaper(o: Options) {
   }, [needsReading, o.currentPageId])
 
   /** Practice: NOVA writes a worksheet like the example line (or on a topic), with a checked answer key. */
-  const startPractice = useCallback(async (p: { topic?: string; example?: string; count?: number }) => {
+  const startPractice = useCallback(async (p: { topic?: string; example?: string; count?: number; allowHelp?: boolean }) => {
     const count = p.count ?? 5
     try {
       setBusy(p.example ? `NOVA is writing ${count} questions like “${p.example.slice(0, 40)}”…` : `NOVA is writing ${count} ${p.topic} questions…`)
@@ -258,7 +258,7 @@ export function usePaper(o: Options) {
         id: shortId('q'), number: q.number, pageId: page.id, text: q.text, bounds: sheet.bounds[i], kind: q.kind, options: q.options,
         answer: q.answer, answerVerified: q.answerVerified, corrected: q.corrected, helpCount: 0,
       }))
-      const test: PaperTest = { id: shortId('test'), title, kind: 'practice', topic, source: p.example, status: 'ready', pageIds: [page.id], questions, progress: { done: 1, total: 1 }, createdAt: Date.now() }
+      const test: PaperTest = { id: shortId('test'), title, kind: 'practice', topic, source: p.example, noHelp: p.allowHelp === false, status: 'ready', pageIds: [page.id], questions, progress: { done: 1, total: 1 }, createdAt: Date.now() }
       saveTest(test)
       o.openPage(page.id)
       o.toast(`${questions.length} practice questions ready. Write your answers under each one, then tap Finish.`)

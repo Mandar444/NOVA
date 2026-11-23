@@ -16,7 +16,7 @@ interface Props {
   onOpen: (id: string) => void
   onCreate: () => void
   onImportPaper: (file: File) => void
-  onPractice: (topic: string) => void
+  onPractice: (topic: string, opts?: { count?: number; allowHelp?: boolean }) => void
   onTry: (what: 'graph' | 'diagram' | 'ask') => void
   onSettings?: () => void
   notify: (msg: string) => void
@@ -310,7 +310,7 @@ export function Library({ tester, onSwitchTester, onOpen, onCreate, onImportPape
         <button onClick={() => onSettings?.()}><Sliders /><span>Settings</span></button>
       </nav>
       {practiceOpen && (
-        <PracticeDialog suggested={weak.map((t) => t.topic)} onStart={(p) => { setPracticeOpen(false); if (p.topic) onPractice(p.topic) }} onClose={() => setPracticeOpen(false)} />
+        <PracticeDialog suggested={weak.map((t) => t.topic)} onStart={(p) => { setPracticeOpen(false); if (p.topic) onPractice(p.topic, { count: p.count, allowHelp: p.allowHelp }) }} onClose={() => setPracticeOpen(false)} />
       )}
     </div>
   )

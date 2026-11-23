@@ -38,6 +38,7 @@ export function TestPanel({ test, pages, busy, current, onGoto, onHelp, onReview
   const idx = test.questions.findIndex((q) => q.id === current)
   const next = test.questions.find((q, i) => i > idx && !answered(q)) ?? test.questions.find((q) => !answered(q))
   const ready = test.status === 'ready'
+  const helpOff = !!test.noHelp && !finished // made with help turned off
   return (
     <aside className="test-panel tq" aria-label="Test" onPointerDown={(e) => e.stopPropagation()}>
       <div className="tq-head">
@@ -101,11 +102,11 @@ export function TestPanel({ test, pages, busy, current, onGoto, onHelp, onReview
                 </div>
               )}
               <div className="tq-help">
-                <button className="hint" aria-label={`Hint for ${label}`} disabled={!ready || finished} onClick={() => onHelp(q)}>Hint</button>
+                <button className="hint" aria-label={`Hint for ${label}`} disabled={!ready || finished || helpOff} onClick={() => onHelp(q)}>Hint</button>
                 <button className="explain" aria-label={`Explain ${label}`} disabled={!finished} title={finished ? undefined : 'Opens after you finish'} onClick={() => onReview(q)}>Explain</button>
                 <button className="solution" aria-label={`Full solution for ${label}`} disabled={!finished} title={finished ? undefined : 'Opens after you finish'} onClick={() => onReview(q)}>Full solution</button>
               </div>
-              <span className="tq-fine">{finished ? 'Explain shows where your reasoning went wrong.' : `Using help is fine — it's shown in your review.${q.helpCount ? ` (${q.helpCount} ${q.helpCount === 1 ? 'hint' : 'hints'} so far)` : ''} Write in the frame beside the question.`}</span>
+              <span className="tq-fine">{finished ? 'Explain shows where your reasoning went wrong.' : helpOff ? 'Help is off for this set. Explain and Full solution open after you finish.' : `Using help is fine — it's shown in your review.${q.helpCount ? ` (${q.helpCount} ${q.helpCount === 1 ? 'hint' : 'hints'} so far)` : ''} Write in the frame beside the question.`}</span>
             </li>
           )
         })}

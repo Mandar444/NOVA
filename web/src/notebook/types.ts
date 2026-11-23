@@ -172,6 +172,7 @@ export interface PaperTest {
   kind?: 'paper' | 'practice' // practice: a worksheet NOVA wrote (older tests are papers)
   topic?: string // practice: the skill being practised
   source?: string // practice: the line it was made from ("5 more like this")
+  noHelp?: boolean // practice set made with help turned off: no Hint / Explain / Full solution until it is marked
   status: 'reading' | 'ready' | 'grading' | 'finished' | 'failed'
   pageIds: string[]
   questions: PaperQuestion[]
