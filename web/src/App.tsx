@@ -5,7 +5,8 @@ import { getMeta, listNotebooks, loadNotebook, saveNotebook, setMeta } from './s
 import type { StartAction } from './ui/Home'
 import { Library } from './ui/Library'
 import { signOutTester, type Tester } from './account/tester'
-import { DEFAULT_SETTINGS, type AppSettings } from './ui/Settings'
+import { AssistConsent, DEFAULT_SETTINGS, SettingsDialog, type AppSettings } from './ui/Settings'
+import { HandwritingSetup } from './ui/HandwritingSetup'
 import { loadLibrary } from './handwriting/library'
 
 type S = DocState | null
@@ -20,6 +21,7 @@ export default function App({ tester }: { tester?: Tester }) {
   const [screen, setScreen] = useState<'loading' | 'library' | 'notebook' | 'error'>('loading')
   const [bootError, setBootError] = useState<string | null>(null)
   const [settings, setSettingsState] = useState<AppSettings>(DEFAULT_SETTINGS)
+  const [libSettings, setLibSettings] = useState<false | 'settings' | 'handwriting' | 'consent'>(false) // Settings opened from Home
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved')
   const [saveError, setSaveError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -142,7 +144,19 @@ export default function App({ tester }: { tester?: Tester }) {
   if (screen === 'library' || !state)
     return (
       <>
-        <Library tester={tester} onSwitchTester={() => { signOutTester(); location.reload() }} onOpen={(id) => void open(id)} onCreate={() => void create()} onImportPaper={(f) => void create({ type: 'pdf', file: f }, f.name.replace(/.pdf$/i, '').slice(0, 60))} onPractice={(t) => void practice(t)} onTry={(w) => void tryIt(w)} notify={setNotice} />
+        <Library tester={tester} onSwitchTester={() => { signOutTester(); location.reload() }} onOpen={(id) => void open(id)} onCreate={() => void create()} onImportPaper={(f) => void create({ type: 'pdf', file: f }, f.name.replace(/.pdf$/i, '').slice(0, 60))} onPractice={(t) => void practice(t)} onTry={(w) => void tryIt(w)} onSettings={() => setLibSettings('settings')} notify={setNotice} />
+        {libSettings === 'settings' && (
+          <SettingsDialog
+            settings={settings}
+            onChange={setSettings}
+            onClose={() => setLibSettings(false)}
+            onRequestAssist={() => setLibSettings('consent')}
+            onExport={() => setNotice('Open a notebook to export it as a backup.')}
+            onTeachHandwriting={() => setLibSettings('handwriting')}
+          />
+        )}
+        {libSettings === 'handwriting' && <HandwritingSetup onClose={() => setLibSettings(false)} notify={setNotice} />}
+        {libSettings === 'consent' && <AssistConsent onAccept={() => { setSettings({ ...settings, assist: true, assistConsent: true }); setLibSettings('settings') }} onCancel={() => setLibSettings('settings')} />}
         {toastEl}
       </>
     )

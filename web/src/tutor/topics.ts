@@ -61,6 +61,8 @@ export interface Progress {
   streak: number // consecutive days with writing, ending today (or yesterday, if today has nothing yet)
   today: { right: number; wrong: number; lines: number; minutes: number } // minutes: distinct minutes with writing
   lastTopic: Topic | null // the topic most recently written or practised
+  /** The last 7 days, oldest first (the last entry is today): lines written per day; marks and practice in that window. */
+  week: { days: { key: string; label: string; lines: number }[]; checked: number; right: number; wrong: number; practiceDone: number }
 }
 
 const dayKey = (t: number) => {
@@ -97,6 +99,13 @@ export function progress(docs: NotebookDoc[], now = Date.now()): Progress {
     return s
   }
   const today = dayKey(now)
+  const weekDays = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(now)
+    d.setDate(d.getDate() - (6 - i))
+    return { key: dayKey(d.getTime()), label: i === 6 ? 'Today' : 'SMTWTFS'[d.getDay()], lines: 0 }
+  })
+  const inWeek = (t: number) => weekDays.find((w) => w.key === dayKey(t))
+  const week = { checked: 0, right: 0, wrong: 0, practiceDone: 0 }
   const days = new Set<string>()
   const todayStats = { right: 0, wrong: 0, lines: 0, minutes: 0 }
   const activeMinutes = new Set<number>()
@@ -116,6 +125,8 @@ export function progress(docs: NotebookDoc[], now = Date.now()): Progress {
         if (t) score(t).seen++
         seenAt(t, r.createdAt)
         if (dayKey(r.createdAt) === today) todayStats.lines++
+        const wd = inWeek(r.createdAt)
+        if (wd) wd.lines++
       }
       for (const o of p.tutorObjects) {
         const a = o.action
@@ -125,12 +136,18 @@ export function progress(docs: NotebookDoc[], now = Date.now()): Progress {
         const t = regionTopic(p, o.anchorRegionId)
         if (t) score(t)[a.tone === 'correct' ? 'right' : 'wrong']++
         if (dayKey(o.createdAt) === today) todayStats[a.tone === 'correct' ? 'right' : 'wrong']++
+        if (inWeek(o.createdAt)) {
+          week.checked++
+          week[a.tone === 'correct' ? 'right' : 'wrong']++
+        }
       }
     }
     for (const test of Object.values(doc.tests ?? {})) {
       if (test.kind === 'practice') seenAt(asTopic(test.topic), test.finishedAt ?? test.createdAt)
       if (test.status !== 'finished') continue
       const marked = test.finishedAt && dayKey(test.finishedAt) === today
+      const thisWeek = !!(test.finishedAt && inWeek(test.finishedAt))
+      if (thisWeek && test.kind === 'practice') week.practiceDone++
       for (const q of test.questions) {
         if (q.verdict !== 'correct' && q.verdict !== 'incorrect') continue
         const t = asTopic(test.topic) ?? classify(q.text)
@@ -140,6 +157,7 @@ export function progress(docs: NotebookDoc[], now = Date.now()): Progress {
           score(t).seen++
         }
         if (marked) todayStats[key]++
+        if (thisWeek) week[key]++
       }
     }
   }
@@ -155,7 +173,7 @@ export function progress(docs: NotebookDoc[], now = Date.now()): Progress {
   const acc = (s: TopicScore) => (s.right + s.wrong ? s.right / (s.right + s.wrong) : 2)
   const topics = [...scores.values()].filter((s) => s.seen > 0 || s.right + s.wrong > 0).sort((a, b) => acc(a) - acc(b) || b.seen - a.seen)
   todayStats.minutes = activeMinutes.size
-  return { topics, streak, today: todayStats, lastTopic: (last as { topic: Topic } | null)?.topic ?? null }
+  return { topics, streak, today: todayStats, lastTopic: (last as { topic: Topic } | null)?.topic ?? null, week: { days: weekDays, ...week } }
 }
 
 /** Below 60% with at least two marks: worth practising. */
