@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import { api, type Capabilities } from '../tutor/api'
 import { Icon } from './icons'
 import { getThemePref, setThemePref, type ThemePref } from './theme'
+import { getVoiceLang, setVoiceLang, type VoiceLang } from '../voice/browserSpeech'
+import { getLibrary } from '../handwriting/library'
+import { HANDWRITING_TOTAL } from './HandwritingSetup'
 
 export interface AppSettings {
   settingsV?: number
@@ -10,16 +13,11 @@ export interface AppSettings {
   assistConsent: boolean
   speechOutput: boolean
   stylusOnly: boolean
+  showReadback?: boolean // the small chip under each line with what NOVA read (on unless turned off)
 }
 
 // Assist (read after you pause writing) is on from the start: that is the whole experience
 export const DEFAULT_SETTINGS: AppSettings = { autoAnswer: true, assist: true, assistConsent: true, settingsV: 2, speechOutput: false, stylusOnly: false }
-
-function Status({ v }: { v: boolean | null | undefined }) {
-  if (v === true) return <span className="status ok">Yes</span>
-  if (v === false) return <span className="status bad">No</span>
-  return <span className="status none">Not run</span>
-}
 
 interface Props {
   settings: AppSettings
@@ -36,6 +34,9 @@ export function SettingsDialog({ settings, onChange, onClose, onRequestAssist, o
   const [testing, setTesting] = useState<string | null>(null)
   const [result, setResult] = useState<string | null>(null)
   const [theme, setTheme] = useState<ThemePref>(getThemePref)
+  const [voice, setVoice] = useState<VoiceLang>(getVoiceLang)
+  const taught = Object.keys(getLibrary()).length
+  const total = HANDWRITING_TOTAL()
 
   const load = () => api.capabilities().then((c) => { setCaps(c); setErr(null) }).catch((e) => setErr((e as Error).message))
   useEffect(() => void load(), [])
@@ -57,80 +58,82 @@ export function SettingsDialog({ settings, onChange, onClose, onRequestAssist, o
   }
 
   return (
-    <div className="dialog-backdrop" onClick={onClose}>
-      <div className="dialog" role="dialog" aria-label="Settings" onClick={(e) => e.stopPropagation()}>
-        <div className="dialog-head">
+    <div className="dialog-backdrop st-back" onClick={onClose}>
+      <div className="st" role="dialog" aria-label="Settings" onClick={(e) => e.stopPropagation()}>
+        <div className="st-head">
+          <button className="st-backbtn" aria-label="Back" onClick={onClose}><Icon.back /></button>
           <h2>Settings</h2>
-          <button className="icon-btn" aria-label="Close" onClick={onClose}><Icon.close /></button>
         </div>
 
-        <section>
-          <h3>Appearance</h3>
-          <div className="row gap" role="radiogroup" aria-label="Theme">
-            {(['system', 'light', 'dark'] as ThemePref[]).map((t) => (
-              <button key={t} role="radio" aria-checked={theme === t} className={`chip ${theme === t ? 'on' : ''}`} onClick={() => { setTheme(t); setThemePref(t) }}>
-                {t === 'system' ? 'Match device' : t === 'light' ? <><Icon.sun /> Light</> : <><Icon.moon /> Dark</>}
+        <section className="st-card">
+          <h3>Theme</h3>
+          <div className="st-themes" role="radiogroup" aria-label="Theme">
+            {(['light', 'dark', 'system'] as ThemePref[]).map((t) => (
+              <button key={t} role="radio" aria-checked={theme === t} className={`st-theme ${theme === t ? 'on' : ''}`} onClick={() => { setTheme(t); setThemePref(t) }}>
+                <span className={`st-theme-pv ${t}`} aria-hidden="true" />
+                <span>{t === 'system' ? 'Match device' : t === 'light' ? 'Light' : 'Dark'}</span>
               </button>
             ))}
           </div>
-          <p className="muted">In dark mode the page turns charcoal and your ink turns light. Shared images always come out on white paper.</p>
         </section>
 
-        <section>
-          <h3>Assist</h3>
-          <label className="row">
-            <input type="checkbox" checked={settings.assist} onChange={(e) => (e.target.checked && !settings.assistConsent ? onRequestAssist() : onChange({ ...settings, assist: e.target.checked }))} />
-            <span>Read my writing automatically after a pause <span className="muted">(sends the line's image to BharatCode)</span></span>
+        <section className="st-card st-rows">
+          <label className="st-row">
+            <span><b>Assist</b><span>NOVA checks each line as you write and marks ✓ or ✗</span></span>
+            <input type="checkbox" className="st-check" checked={settings.assist} onChange={(e) => (e.target.checked && !settings.assistConsent ? onRequestAssist() : onChange({ ...settings, assist: e.target.checked }))} />
           </label>
-          <label className="row">
-            <input type="checkbox" checked={settings.autoAnswer} onChange={(e) => onChange({ ...settings, autoAnswer: e.target.checked })} />
-            <span>Auto-answer: NOVA writes the answer after "=" in handwriting <span className="muted">(off: NOVA only marks ✓ / ✗)</span></span>
+          <label className="st-row">
+            <span><b>Show what NOVA read</b><span>A small chip under each line. Tap it to open Hint, Explain or Solve.</span></span>
+            <input type="checkbox" className="st-check" checked={settings.showReadback !== false} onChange={(e) => onChange({ ...settings, showReadback: e.target.checked })} />
           </label>
-          <label className="row">
-            <input type="checkbox" checked={settings.speechOutput} onChange={(e) => onChange({ ...settings, speechOutput: e.target.checked })} />
-            <span>Always speak NOVA's replies <span className="muted">(questions you ask by voice are always answered aloud; text is always shown)</span></span>
-          </label>
-          <label className="row">
-            <input type="checkbox" checked={settings.stylusOnly} onChange={(e) => onChange({ ...settings, stylusOnly: e.target.checked })} />
-            <span>Stylus-only drawing <span className="muted">(fingers pan and zoom; not hardware palm rejection)</span></span>
-          </label>
-        </section>
-
-        <section>
-          <h3>Handwriting</h3>
-          <p className="muted">NOVA writes its answers in handwriting. Teach it yours and its answers will look like you wrote them (always in NOVA's blue, so you can tell them apart).</p>
-          <button className="btn" onClick={onTeachHandwriting}>Teach NOVA your handwriting…</button>
-        </section>
-
-        <section>
-          <h3>Connection</h3>
-          {err && <p className="error-text">Server not reachable: {err}</p>}
-          {caps && (
-            <table className="caps">
-              <tbody>
-                <tr><td>Provider / model</td><td>{caps.provider.name} · {caps.provider.model}</td></tr>
-                <tr><td>Key configured on server</td><td><Status v={caps.provider.keyConfigured} /></td></tr>
-                <tr><td>Models reachable</td><td><Status v={caps.provider.modelsReachable} /></td></tr>
-                <tr><td>Vision smoke-tested</td><td><Status v={caps.provider.visionSmokeTested} /></td></tr>
-                <tr><td>Speech engine</td><td>{caps.speech.installed ? `faster-whisper (${caps.speech.model})${caps.speech.lastError ? ' · ' + caps.speech.lastError : ''}` : <span className="status none">Not installed</span>}</td></tr>
-                <tr><td>Maths scopes</td><td>{caps.mathScopes.join(', ')}</td></tr>
-                {caps.provider.lastError && <tr><td>Last error</td><td className="error-text">{caps.provider.lastError}</td></tr>}
-              </tbody>
-            </table>
-          )}
-          {caps && !caps.provider.keyConfigured && <p className="muted">Add <code>BHARATCODE_API_KEY=…</code> to <code>server/.env</code> and restart the server. The key never reaches the browser.</p>}
-          <div className="row gap">
-            <button className="btn" disabled={!!testing} onClick={() => test(false)}>{testing === 'models' ? 'Testing…' : 'Test connection'}</button>
-            <button className="btn" disabled={!!testing} onClick={() => test(true)}>{testing === 'vision' ? 'Testing…' : 'Test vision'}</button>
+          <div className="st-row">
+            <span><b>Voice language</b><span>For spoken questions. Shown in the text box before sending.</span></span>
+            <div className="st-seg" role="radiogroup" aria-label="Voice language">
+              {([['en', 'English'], ['hi', 'हिन्दी'], ['hinglish', 'Hinglish']] as [VoiceLang, string][]).map(([v, label]) => (
+                <button key={v} role="radio" aria-checked={voice === v} className={voice === v ? 'on' : ''} onClick={() => { setVoice(v); setVoiceLang(v) }}>{label}</button>
+              ))}
+            </div>
           </div>
-          {result && <p className="muted">{result}</p>}
         </section>
 
-        <section>
-          <h3>Data</h3>
-          <p className="muted">Notebooks live in this browser only. Export a backup to keep a copy.</p>
-          <button className="btn" onClick={onExport}>Export notebook backup (.nova.json)</button>
+        <section className="st-hw">
+          <span className="st-hw-pv" aria-hidden="true">7 x ÷</span>
+          <span className="st-hw-body">
+            <b>Teach NOVA my handwriting</b>
+            <span>Write a few digits and symbols so NOVA writes its answers in your hand. About 3 minutes.</span>
+            <span className="st-hw-bar"><i style={{ '--w': `${Math.round((taught / Math.max(1, total)) * 100)}%` } as React.CSSProperties} /><em>{taught} / {total}</em></span>
+          </span>
+          <button className="st-hw-btn" onClick={onTeachHandwriting}>{taught ? 'Continue' : 'Start'}</button>
         </section>
+
+        <details className="st-card st-more">
+          <summary>More settings</summary>
+          <label className="st-row">
+            <span><b>Auto-answer</b><span>NOVA finishes plain arithmetic after “=”. Off: NOVA only marks ✓ / ✗.</span></span>
+            <input type="checkbox" className="st-check" checked={settings.autoAnswer} onChange={(e) => onChange({ ...settings, autoAnswer: e.target.checked })} />
+          </label>
+          <label className="st-row">
+            <span><b>Always speak NOVA's replies</b><span>Spoken questions are always answered aloud.</span></span>
+            <input type="checkbox" className="st-check" checked={settings.speechOutput} onChange={(e) => onChange({ ...settings, speechOutput: e.target.checked })} />
+          </label>
+          <label className="st-row">
+            <span><b>Stylus-only drawing</b><span>Fingers pan and zoom.</span></span>
+            <input type="checkbox" className="st-check" checked={settings.stylusOnly} onChange={(e) => onChange({ ...settings, stylusOnly: e.target.checked })} />
+          </label>
+          <div className="st-row st-col">
+            <span><b>Connection</b><span>{err ? `Server not reachable: ${err}` : caps ? `${caps.provider.model} · key ${caps.provider.keyConfigured ? 'set' : 'missing'} · models ${caps.provider.modelsReachable === null ? 'not tested' : caps.provider.modelsReachable ? 'reachable' : 'unreachable'}` : 'Checking…'}</span></span>
+            <span className="row gap">
+              <button className="btn" disabled={!!testing} onClick={() => test(false)}>{testing === 'models' ? 'Testing…' : 'Test connection'}</button>
+              <button className="btn" disabled={!!testing} onClick={() => test(true)}>{testing === 'vision' ? 'Testing…' : 'Test vision'}</button>
+            </span>
+            {result && <span className="muted">{result}</span>}
+          </div>
+          <div className="st-row st-col">
+            <span><b>Backup</b><span>Notebooks live on this device only. Export a copy to keep it safe.</span></span>
+            <button className="btn" onClick={onExport}>Export notebook backup</button>
+          </div>
+        </details>
+        <p className="st-foot">Your notebooks are saved on this device. Nothing changes when you switch themes.</p>
       </div>
     </div>
   )

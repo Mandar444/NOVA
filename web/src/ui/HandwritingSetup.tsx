@@ -8,6 +8,7 @@ import { clearLibrary, getLibrary, saveLibrary } from '../handwriting/library'
 import { Icon } from './icons'
 
 // characters NOVA writes most: two samples for digits (natural variation), one for symbols
+export const HANDWRITING_TOTAL = () => CHARS.length
 const CHARS: { c: string; n: number; hint?: string }[] = [
   ...'0123456789'.split('').map((c) => ({ c, n: 2 })),
   { c: '+', n: 1 }, { c: '-', n: 1, hint: 'minus' }, { c: '×', n: 1, hint: 'times' }, { c: '÷', n: 1 }, { c: '=', n: 1 },

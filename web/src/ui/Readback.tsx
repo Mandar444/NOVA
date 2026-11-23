@@ -28,13 +28,14 @@ interface Props {
   onRetry: (regionId: string) => void
   onSelect: (regionId: string) => void
   onQuick: (regionId: string, intent: 'plot' | 'solve' | 'ask' | 'hint' | 'explain') => void
+  showAccepted?: boolean // the 'I read' chip on lines NOVA has read (Settings › Show what NOVA read)
 }
 
 function screenRect(view: View, r: Region['bounds']) {
   return { x: view.tx + r.x * view.scale, y: view.ty + r.y * view.scale, w: r.w * view.scale, h: r.h * view.scale }
 }
 
-export function ReadbackLayer({ page, view, phases, selectedRegionId, hoveredRegionId, onAccept, onRetry, onSelect, onQuick }: Props) {
+export function ReadbackLayer({ page, view, phases, selectedRegionId, hoveredRegionId, onAccept, onRetry, onSelect, onQuick, showAccepted = true }: Props) {
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
   const [open, setOpen] = useState<string | null>(null) // the line whose help card is open
   const stop = (e: React.PointerEvent) => e.stopPropagation()
@@ -93,6 +94,7 @@ export function ReadbackLayer({ page, view, phases, selectedRegionId, hoveredReg
             const t = reading.acceptedText ?? ''
             const go = (intent: 'plot' | 'solve' | 'ask' | 'hint' | 'explain') => { setOpen(null); onQuick(region.id, intent) }
             if (open !== region.id) {
+              if (!showAccepted && !selected) return null
               return (
                 <button className="rb-chip" aria-expanded="false" aria-label={`NOVA read ${t}${c ? `, ${CHECK_LABEL[c.status]}` : ''}. Show help options`} onClick={() => setOpen(region.id)}>
                   <Icon.ask />

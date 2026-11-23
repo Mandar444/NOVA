@@ -36,7 +36,25 @@ const MAX_LISTEN_MS = 20_000
 
 /** The accent to listen for. In India that is Indian English, even when the browser itself is set to en-US
  *  (the usual default there): the US model mishears Indian accents much more often. */
+export type VoiceLang = 'en' | 'hi' | 'hinglish'
+export function getVoiceLang(): VoiceLang {
+  try {
+    const v = localStorage.getItem('nova.voiceLang')
+    return v === 'hi' || v === 'hinglish' ? v : 'en'
+  } catch {
+    return 'en'
+  }
+}
+export function setVoiceLang(v: VoiceLang) {
+  try {
+    localStorage.setItem('nova.voiceLang', v)
+  } catch {
+    /* private mode: this visit only */
+  }
+}
+
 export function speechLang(): string {
+  if (getVoiceLang() === 'hi') return 'hi-IN' // Hindi; Hinglish is Indian English, which hears mixed speech best
   let tz = ''
   try {
     tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? ''

@@ -849,6 +849,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
                 phases={nova.phases}
                 selectedRegionId={selected}
                 hoveredRegionId={hovered}
+                showAccepted={settings.showReadback !== false}
                 onAccept={(id, text) => dispatch({ type: 'acceptReading', pageId, regionId: id, text })}
                 onRetry={(id) => void nova.readNow(id).catch((e) => toast((e as Error).message))}
                 onSelect={setSelected}
