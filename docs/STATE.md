@@ -2,6 +2,30 @@
 
 _Last updated: 2026-11-18_
 
+## Orbit UI (2026-11-23, branch `ui-orbit` from origin/main c065034; local only, not pushed)
+Design source: the "NOVA — New UI" Design canvas (17 boards). Grid paper, canvas drawing and NOVA's ink colour unchanged.
+Checks: server pytest 212 passed, web vitest 48 passed, tsc clean, build ok. Run locally: http://127.0.0.1:5180 (vite preview of
+web/dist) with the backend on :8010.
+
+| Area | What changed |
+|---|---|
+| Look | `web/src/orbit.css` (loaded last): Orbit tokens light/dark, Iris accent, bundled Bricolage Grotesque + Plus Jakarta Sans, glass bars, iOS-style press (scale .96, 160 ms), reduced-motion respected |
+| Notebook | floating capsules (back · title · saved · page n/N; Assist · Test · Ask NOVA · More), one status pill (ready / working with seconds + Stop / plain-language error + Retry), tool dock bottom on laptops, left edge on touch screens, phone bar (Pen, Eraser, Move, Undo, More); the page starts clear of the bars |
+| Readback | quiet chip under the line; tap → card with I read · Edit, Hint / Explain / Full solution, Graph, Ask about this line |
+| Ask | docked column beside the page (page shrinks), bottom sheet on phones; Hint/Explain/Full solution chips; Copy and Show on page on replies; skeleton + Stop while waiting |
+| Test | one side area: Test and Ask as tabs; numbered questions, open one expands; Hint only during a test, Explain after marking; answer frames beside each printed question in the grid margin (the band NOVA reads as that answer); a page NOVA fitted refits when the panel opens |
+| Home | greeting, Continue card with real page preview, New notebook / Import paper / Practice tiles, notebooks as real page previews; streak and daily goal removed |
+| Dialogs | cards on larger screens, bottom sheets on phones, iOS-style switches |
+| Pen | NOVA's cards no longer swallow the pen; they fade while writing (found by the simulated session: 2 of 13 strokes were landing on a card) |
+
+Verified (headless Chrome, screenshots at 1440×900, 1194×834 touch, 390×844; light and dark): notebook, readback chip and card,
+Ask (laptop dark, phone light), Test panel with answer frames (question finding SIMULATED for the screenshots), Home, Welcome,
+Settings. Simulated regressions on the new UI: session (identical after reload, 13/13 strokes), Stop (idle 85 ms, late reply never
+shown), second question replaces pending. Real-model reads/answers timed out during these runs (BharatCode slow); the plain-language
+errors showed correctly.
+Not done: no physical phone/tablet test; Practice dialog not screenshotted; design items left out on purpose (streak, progress
+numbers, search on phone header, auto-retry countdown); older ad-hoc scripts in tests/e2e may still use removed selectors.
+
 ## QA batch 2 (2026-11-18, branch `qa-batch2` from `qa-journeys` @ 71c3dfd; local only, not deployed)
 `qa-journeys` stays at its checkpoint. Main folder untouched. Checks: server pytest **206 passed**, web vitest **20 passed**, tsc clean, build ok.
 
