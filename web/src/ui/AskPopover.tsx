@@ -14,6 +14,7 @@ import { browserSpeechAvailable, listen, type BrowserListen } from '../voice/bro
 let serverVoice: Promise<boolean> | null = null
 const hasServerVoice = () => (serverVoice ??= api.capabilities().then((c) => !!c.features?.transcribe).catch(() => false))
 import { Icon } from './icons'
+import { plainMessage } from './StatusPill'
 
 interface Props {
   docked: boolean // false = phone bottom sheet
@@ -27,19 +28,19 @@ interface Props {
   onClose: () => void
   offsetRight?: number // keep clear of a panel on the right (the test panel)
   onStop?: () => void // stop the answer NOVA is working on
+  onShow?: (regionId: string) => void // bring the line a reply is about into view
 }
 
-const QUICK_LINE: { label: string; intent: Intent; q: string }[] = [
-  { label: 'Hint', intent: 'hint', q: '' },
-  { label: 'Why is it wrong?', intent: 'explain', q: 'Why is it wrong?' },
-  { label: 'Check', intent: 'check', q: '' },
-  { label: 'Next step', intent: 'complete', q: 'Show me the next step.' },
-  { label: 'Solve', intent: 'solve', q: '' },
-  { label: 'Graph', intent: 'plot', q: '' },
+// the three kinds of help, always separate (plus a check of the line)
+const QUICK_LINE: { label: string; intent: Intent; q: string; tone: string }[] = [
+  { label: 'Hint', intent: 'hint', q: '', tone: 'hint' },
+  { label: 'Explain', intent: 'explain', q: 'Explain why.', tone: 'explain' },
+  { label: 'Full solution', intent: 'ask', q: 'Show me the full worked solution.', tone: 'solution' },
+  { label: 'Check', intent: 'check', q: '', tone: '' },
 ]
 const QUICK_PAGE: string[] = ['Add a trigonometry table', 'Write the algebraic identities', 'Explain what I did on this page', 'Give me a similar question to practise']
 
-export function AskPanel({ docked, startWithMic, initialText, turns, status, about, onClearAbout, onSend, onClose, offsetRight, onStop }: Props) {
+export function AskPanel({ docked, startWithMic, initialText, turns, status, about, onClearAbout, onSend, onClose, offsetRight, onStop, onShow }: Props) {
   const [text, setText] = useState(initialText ?? '')
   const [mic, setMic] = useState<'idle' | 'recording' | 'transcribing'>('idle')
   const [elapsed, setElapsed] = useState(0)
@@ -197,19 +198,21 @@ export function AskPanel({ docked, startWithMic, initialText, turns, status, abo
   const boxText = listening && hearing ? `${text} ${hearing}`.trim() : text
   return (
     <aside className={docked ? 'ask-panel' : 'ask-panel sheet-mode'} style={docked && offsetRight ? { right: offsetRight } : undefined} onPointerDown={(e) => e.stopPropagation()} role="dialog" aria-label="Ask NOVA">
+      {!docked && <span className="sheet-grip" aria-hidden="true" />}
       <header className="ask-head">
-        <span className="nova-mark" aria-hidden="true" />
-        <span className="ask-title"><img className="ask-mark" src="/nova-icon.png" alt="" />Ask NOVA</span>
-        <span className="spacer" />
-        <button className="icon-btn sm" aria-label="Close" onClick={onClose}><Icon.close /></button>
+        <span className="ask-badge" aria-hidden="true"><Icon.ask /></span>
+        <span className="ask-heading">
+          <b className="ask-title">Ask NOVA</b>
+          <span className="ask-about">
+            {about ? (
+              <>About <b>{about}</b> <button className="link" aria-label="Ask about the whole page instead" onClick={onClearAbout}>Whole page</button></>
+            ) : (
+              'About the whole page'
+            )}
+          </span>
+        </span>
+        <button className="ask-close" aria-label="Close Ask NOVA" onClick={onClose}><Icon.close /></button>
       </header>
-      <div className="ask-about">
-        {about ? (
-          <span className="about-chip">About <b>{about}</b> <button className="link" aria-label="Ask about the whole page instead" onClick={onClearAbout}>×</button></span>
-        ) : (
-          <span className="about-chip page">About the whole page</span>
-        )}
-      </div>
       <div className="thread" ref={threadRef}>
         {shown.length === 0 && !busy && (
           <div className="thread-empty">
@@ -218,26 +221,38 @@ export function AskPanel({ docked, startWithMic, initialText, turns, status, abo
         )}
         {shown.map((t, i) => (
           <div key={i} className={`bubble ${t.role}`}>
-            {t.text}
+            <span className="bubble-text">{t.text}</span>
             {t.detail && (
               <details className="bubble-more">
                 <summary>Explain more</summary>
                 <div>{t.detail}</div>
               </details>
             )}
+            {t.role === 'tutor' && (
+              <span className="bubble-actions">
+                {t.problemId && onShow && <button onClick={() => onShow(t.problemId!)}>Show on page</button>}
+                <button onClick={() => void navigator.clipboard?.writeText(t.detail ? `${t.text}\n\n${t.detail}` : t.text).catch(() => undefined)}>Copy</button>
+              </span>
+            )}
           </div>
         ))}
-        {busy && <div className="bubble tutor thinking"><span className="dots"><i /><i /><i /></span>{status.message}{onStop && <button className="link" onClick={onStop}>Stop</button>}</div>}
+        {busy && (
+          <div className="bubble tutor thinking" aria-label="NOVA is answering">
+            <span className="skel" /><span className="skel" /><span className="skel short" />
+            <span className="thinking-note">{status.message || 'Working…'} Keep writing, the answer appears beside your work.</span>
+            {onStop && <button className="ask-stop" onClick={onStop}><Icon.stop /> Stop</button>}
+          </div>
+        )}
         {status.state === 'error' && (
           <div className="bubble tutor error">
-            {status.message} {status.retry && <button className="link strong" onClick={status.retry}>Retry</button>}
+            {plainMessage(status.message)} {status.retry && <button className="link strong" onClick={status.retry}>Retry</button>}
           </div>
         )}
         {status.state === 'notice' && status.message && <div className="bubble tutor notice">{status.message}</div>}
       </div>
       <div className="chips">
         {about
-          ? QUICK_LINE.map((q) => <button key={q.label} className="chip" onClick={() => send(q.intent, q.q)}>{q.label}</button>)
+          ? QUICK_LINE.map((q) => <button key={q.label} className={`chip ${q.tone}`} onClick={() => send(q.intent, q.q)}>{q.label}</button>)
           : QUICK_PAGE.map((q) => <button key={q} className="chip" onClick={() => send('ask', q)}>{q}</button>)}
       </div>
       <div className="ask-row">

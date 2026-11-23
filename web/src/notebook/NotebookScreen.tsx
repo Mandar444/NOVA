@@ -113,6 +113,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
   const fileRef = useRef<HTMLInputElement>(null)
   const pdfRef = useRef<HTMLInputElement>(null)
   const [testOpen, setTestOpen] = useState(false)
+  const [sideTab, setSideTab] = useState<'test' | 'ask'>('test') // laptop/tablet: one side area, Test and Ask as tabs
   const [hwOpen, setHwOpen] = useState(false)
   const [practiceOpen, setPracticeOpen] = useState<{ example: string | null } | null>(null)
   const [tourOpen, setTourOpen] = useState(false)
@@ -291,6 +292,14 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
   }
 
   const regionBounds = useCallback((id: string) => page.regions.find((r) => r.id === id)?.bounds, [page.regions])
+
+  useEffect(() => setSideTab(ask ? 'ask' : 'test'), [ask])
+  /** Bring a line into view (from a reply's "Show on page"). */
+  const showRegion = (regionId: string) => {
+    const b = regionBounds(regionId)
+    if (!b || !size.w) return
+    setView((v) => ({ ...v, tx: Math.round(size.w * 0.3 - b.x * v.scale), ty: Math.round(size.h * 0.35 - b.y * v.scale) }))
+  }
 
   const openAsk = (mic = false) => {
     setMenu(null)
@@ -593,11 +602,29 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
     </div>
   )
 
+  const askPanel = (docked: boolean) =>
+    ask && (
+      <AskPanel
+        key={ask.key}
+        docked={docked}
+        startWithMic={ask.mic}
+        initialText={ask.text}
+        turns={page.history}
+        status={nova.status}
+        about={askAbout ? readingText(page.readings[askAbout]) ?? 'the selected line' : null}
+        onClearAbout={() => setAskAbout(null)}
+        onSend={askFromPanel}
+        onClose={() => setAsk(null)}
+        onStop={nova.cancel}
+        onShow={(id) => page.regions.some((r) => r.id === id) && showRegion(id)}
+      />
+    )
+
   const saveLabel = saveStatus === 'saving' ? 'Saving…' : saveStatus === 'error' ? 'Not saved' : 'Saved'
 
   return (
     <div
-      className={`notebook ${phone ? 'phone' : desktop ? 'desktop' : 'tablet'} ${focus ? 'focus' : ''}`}
+      className={`notebook ${phone ? 'phone' : desktop ? 'desktop' : 'tablet'} ${focus ? 'focus' : ''} ${!focus && !phone && (ask || (testOpen && activeTest)) ? 'side-open' : ''}`}
       onPointerDown={() => menu && setMenu(null)}
       onPointerMove={(e) => {
         if (e.pointerType !== 'mouse') return
@@ -677,7 +704,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
                 <Icon.read /> Assist
               </button>
               {testsList.length > 0 && (
-                <button className={`ob-seg ${testOpen ? 'on' : ''}`} aria-pressed={testOpen} onClick={() => setTestOpen((v) => !v)}><Icon.check /> Test</button>
+                <button className={`ob-seg ${testOpen ? 'on' : ''}`} aria-pressed={testOpen} onClick={() => { if (ask && testOpen && sideTab === 'ask') setSideTab('test'); else setTestOpen((v) => !v) }}><Icon.check /> Test</button>
               )}
               <button className="ob-ask" onClick={() => openAsk(false)}><Icon.ask /> Ask NOVA</button>
               <div className="anchor-rel">
@@ -797,7 +824,34 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
           }
         />
         {historyOpen && !focus && <HistoryDrawer turns={pageTurns} onClose={() => setHistoryOpen(false)} />}
-        {testOpen && activeTest && !focus && (
+        {!focus && !phone && (ask || (testOpen && activeTest)) && (
+          <div className="ob-side" onPointerDown={(e) => e.stopPropagation()}>
+            {ask && testOpen && activeTest && (
+              <div className="ob-side-tabs" role="tablist" aria-label="Side panel">
+                <button role="tab" aria-selected={sideTab === 'test'} className={sideTab === 'test' ? 'on' : ''} onClick={() => setSideTab('test')}><Icon.check /> Test</button>
+                <button role="tab" aria-selected={sideTab === 'ask'} className={sideTab === 'ask' ? 'on' : ''} onClick={() => setSideTab('ask')}><Icon.ask /> Ask NOVA</button>
+              </div>
+            )}
+            {testOpen && activeTest && (
+              <div className="ob-side-pane" hidden={!!ask && sideTab !== 'test'}>
+                <TestPanel
+                  test={activeTest}
+                  pages={doc.pages}
+                  busy={paper.busy}
+                  onGoto={gotoQuestion}
+                  onHelp={(q) => paper.help(activeTest.id, q)}
+                  onReview={(q) => paper.review(activeTest.id, q)}
+                  onFinish={() => void paper.finish(activeTest.id)}
+                  onRetry={() => paper.retryFailed(activeTest.id)}
+                  onClose={() => setTestOpen(false)}
+                  onPracticeMore={activeTest.kind === 'practice' ? () => void runPractice({ topic: activeTest.topic, example: activeTest.source }) : undefined}
+                />
+              </div>
+            )}
+            {ask && <div className="ob-side-pane" hidden={!!(testOpen && activeTest) && sideTab !== 'ask'}>{askPanel(true)}</div>}
+          </div>
+        )}
+        {phone && testOpen && activeTest && !focus && (
           <TestPanel
             test={activeTest}
             pages={doc.pages}
@@ -857,22 +911,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
         </div>
       )}
 
-      {ask && (
-        <AskPanel
-          key={ask.key}
-          docked={!phone}
-          startWithMic={ask.mic}
-          initialText={ask.text}
-          turns={page.history}
-          status={nova.status}
-          about={askAbout ? readingText(page.readings[askAbout]) ?? 'the selected line' : null}
-          onClearAbout={() => setAskAbout(null)}
-          onSend={askFromPanel}
-          onClose={() => setAsk(null)}
-          offsetRight={!phone && testOpen && activeTest && !focus ? 376 : undefined}
-          onStop={nova.cancel}
-        />
-      )}
+      {ask && (phone || focus) && askPanel(false)}
       {sheet && <ObjectSheet obj={sheet} onClose={() => setSheet(null)} />}
       {paper.busy && !(testOpen && activeTest) && (
         <div className="busy-banner" role="status"><span className="spinner" />{paper.busy}</div>

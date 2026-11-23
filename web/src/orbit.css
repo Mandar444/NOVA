@@ -195,6 +195,8 @@ button:disabled { opacity: 0.35; }
 .ob-pill-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .ob-pill-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 18px; }
 .ob-pill.error .ob-pill-text, .ob-pill.notice .ob-pill-text { white-space: normal; }
+.ob-pill.compact .ob-pill-text { white-space: nowrap !important; overflow: hidden; text-overflow: ellipsis; font-size: 13px; min-width: 0; flex: 1; }
+.ob-pill.compact { min-width: 0; overflow: hidden; }
 .ob-pill-track { display: block; height: 3px; border-radius: 2px; background: color-mix(in srgb, currentColor 18%, transparent); overflow: hidden; }
 .ob-pill-track span { display: block; width: 35%; height: 100%; border-radius: 2px; background: currentColor; opacity: 0.85; animation: ob-track 1.6s var(--nv-ease) infinite; }
 .ob-pill-secs { font: 500 13px var(--nv-sans); font-variant-numeric: tabular-nums; opacity: 0.7; flex: none; }
@@ -323,6 +325,85 @@ button:disabled { opacity: 0.35; }
 }
 .menu-btn { height: 40px; padding: 0 12px; border-radius: 12px; font: 600 14px var(--nv-sans); color: var(--nv-text); }
 .menu-btn:hover { background: var(--nv-fill); color: var(--nv-text); }
+
+/* ==== one side area beside the page: Test and Ask (tabs when both are open) ==== */
+.ob-side {
+  width: 400px; flex: none; height: 100%; display: flex; flex-direction: column; min-height: 0;
+  background: var(--nv-surface); border-left: 1px solid var(--nv-line); position: relative; z-index: 15;
+}
+.tablet .ob-side { width: 380px; }
+.ob-side-tabs { display: flex; gap: 2px; margin: 12px 14px 4px; padding: 3px; border-radius: 13px; background: var(--nv-fill); flex: none; }
+.ob-side-tabs button {
+  flex: 1; height: 38px; border-radius: 10px; border: 0; background: transparent; color: var(--nv-text-2);
+  font: 600 14px var(--nv-sans); display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+}
+.ob-side-tabs button svg { width: 18px; height: 18px; }
+.ob-side-tabs button.on { background: var(--nv-surface); color: var(--nv-text); box-shadow: 0 1px 3px rgba(23, 22, 31, 0.12), 0 0 0 0.5px var(--nv-hair); }
+.ob-side-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ob-side-pane[hidden] { display: none; }
+.ob-side-pane > .test-panel, .ob-side-pane > .ask-panel {
+  position: static; width: auto; flex: 1; max-height: none; min-height: 0; border: 0; border-radius: 0; box-shadow: none; background: transparent; padding-top: 0;
+}
+.notebook.side-open .ob-top { right: 416px; }
+.notebook.tablet.side-open .ob-top { right: 396px; }
+.notebook.side-open .ob-dock.bottom { left: calc((100% - 400px) / 2); }
+.notebook.side-open .ob-top .ob-center { display: none; }
+.ob-top .ob-right { margin-left: auto; }
+
+/* ==== Ask NOVA ============================================================= */
+.ask-panel { color: var(--nv-text); font-family: var(--nv-sans); }
+.ask-head { display: flex; align-items: center; gap: 10px; padding: 14px 14px 10px 18px; }
+.ask-badge { width: 36px; height: 36px; border-radius: 12px; background: var(--nv-accent-soft); color: var(--nv-accent-ink); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.ask-heading { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ask-title { font: 700 19px/24px var(--nv-display); letter-spacing: -0.02em; text-transform: none; color: var(--nv-text); }
+.ask-about { padding: 0; font: 500 13px/18px var(--nv-sans); color: var(--nv-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ask-about b { font-weight: 700; color: var(--nv-text); }
+.ask-about .link { font-size: 13px; margin-left: 4px; }
+.ask-close { width: 40px; height: 40px; border-radius: 12px; border: 0; background: var(--nv-fill); color: var(--nv-text); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.ask-close svg { width: 18px; height: 18px; }
+.thread { background: transparent; border-top: 0; padding: 8px 18px 12px; gap: 12px; }
+.thread-empty { color: var(--nv-text-2); font-size: 15px; line-height: 22px; }
+.bubble { max-width: 88%; padding: 12px 14px; font-size: 15px; line-height: 23px; border-radius: 18px; }
+.bubble.student { background: var(--nv-accent-soft); color: var(--nv-text); border-radius: 18px 18px 6px 18px; }
+.bubble.tutor { background: var(--nv-surface-2); color: var(--nv-text); border: 1px solid var(--nv-line); border-left: 1px solid var(--nv-line); border-radius: 18px 18px 18px 6px; max-width: 94%; }
+.bubble.tutor.error { color: var(--nv-danger); border-color: var(--nv-line); }
+.bubble.tutor.notice { color: var(--nv-text-2); border-color: var(--nv-line); }
+.bubble-more { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--nv-line); font-size: 14px; }
+.bubble-more summary { color: var(--nv-accent-ink); font-weight: 700; min-height: 28px; display: flex; align-items: center; }
+.bubble-more summary::before { content: ''; }
+.bubble-more > div { color: var(--nv-text-2); line-height: 21px; white-space: pre-wrap; }
+.bubble-actions { display: flex; gap: 6px; margin-top: 10px; white-space: normal; }
+.bubble-actions button { height: 32px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--nv-line); background: transparent; color: var(--nv-text); font: 600 13px var(--nv-sans); }
+.bubble-actions button:hover { background: var(--nv-fill); }
+.bubble.thinking { display: flex; flex-direction: column; align-items: stretch; gap: 8px; width: 78%; color: var(--nv-text-2); white-space: normal; }
+.skel { display: block; height: 10px; width: 92%; border-radius: 5px; background: var(--nv-fill-2); animation: ob-pulse 1.4s ease-in-out infinite; }
+.skel:nth-child(2) { width: 74%; }
+.skel.short { width: 48%; }
+.thinking-note { font-size: 13px; line-height: 18px; }
+.ask-stop { align-self: flex-start; height: 34px; padding: 0 12px; border-radius: 999px; border: 0; background: var(--nv-invert); color: var(--nv-on-invert); font: 700 13px var(--nv-sans); display: inline-flex; align-items: center; gap: 6px; }
+.ask-stop svg { width: 12px; height: 12px; }
+@keyframes ob-pulse { 50% { opacity: 0.45; } }
+.ask-panel .chips { padding: 4px 16px 0; gap: 6px; }
+.ask-panel .chip { height: 36px; background: var(--nv-fill); color: var(--nv-text); border: 1px solid transparent; }
+.ask-panel .chip.hint { background: color-mix(in srgb, var(--nv-warn) 14%, transparent); color: var(--nv-warn); }
+.ask-panel .chip.explain { background: var(--nv-accent-soft); color: var(--nv-accent-ink); }
+.ask-panel .chip.solution { background: transparent; border-color: var(--nv-line); }
+.ask-row { margin: 10px 14px 14px; padding: 6px; gap: 6px; border-radius: 20px; background: var(--nv-surface-2); border: 1px solid var(--nv-line); align-items: flex-end; }
+.ask-row textarea { border: 0 !important; background: transparent !important; color: var(--nv-text); font: 500 15px/22px var(--nv-sans); padding: 8px 10px; box-shadow: none; }
+.ask-row textarea:focus { outline: none; box-shadow: none; border: 0; }
+.ask-row:focus-within { border-color: var(--nv-accent); }
+.ask-row .icon-btn { width: 44px; height: 44px; border-radius: 14px; background: var(--nv-fill); color: var(--nv-accent-ink); }
+.ask-row .icon-btn.send { background: var(--nv-accent); color: var(--nv-on-accent); }
+.ask-row .icon-btn.recording { background: var(--nv-danger); color: #fff; }
+.ask-panel .mic-state { padding: 0 18px 12px; font-size: 13px; color: var(--nv-text-2); }
+
+/* phone: a bottom sheet with a grip, over a dimmed page edge */
+.ask-panel.sheet-mode {
+  background: var(--nv-surface); border: 0; border-radius: 28px 28px 0 0; box-shadow: var(--nv-shadow-sheet); max-height: 72vh; z-index: 40;
+  animation: ob-sheet 200ms var(--nv-ease);
+}
+.sheet-grip { display: block; width: 40px; height: 5px; border-radius: 3px; background: var(--nv-fill-2); margin: 8px auto 0; flex: none; }
+@keyframes ob-sheet { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* dark mode shows the page inverted (theme-dark.css), so ink swatches show the colour the student will actually see */
 :root[data-theme='dark'] .ob-ink, :root[data-theme='dark'] .swatch, :root[data-theme='dark'] .width-btn span { filter: invert(1) hue-rotate(180deg); }
