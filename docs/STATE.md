@@ -304,3 +304,10 @@ Timings (last pen-up →): local reader 2.1–2.3 s (unsure on calculus); cloud 
 - Reader recovery: a failed/timed-out model load is torn down (worker terminated, pending reads rejected, late messages ignored) and retried after 20 s, at most 3 times per visit (was: broken until reload).
 - Verified locally (5180, real ink): 3 + 2 = → suggestion 2.56 s, Use it → "5" at 2.65 s, cloud request cancelled; 8 + 5 = 13 → ✓ at 2.70 s; 3 + 2 = 6 / 12 + 7 = automatic 2.15–2.2 s, 0 cloud calls; model load cold 113 ms, warm 112 ms. Tests: web 101 (3 reader-recovery tests), server 273.
 - Integrals stay out of the local reader's scope: cloud reading with the bounded 30 s/45 s limits and Type it / Edit recovery.
+
+## Attribution + edited-reading guard (2026-11-24, live d0eb858)
+- Test fix: the live check now tracks each line by region/sourceHash/interpretation, clicks the "Use it" inside that line's own readback and waits for an answer anchored to that region. The earlier "late 5" was a logging error in the script: the 5 is anchored to "3 + 2 =".
+- App fix: /auto results are tied to the reading they were computed for (text + interpretation revision, and the problem's); a result for an edited reading is discarded ("interpretation changed"); result ids include the interpretation so a corrected answer replaces the old one; editing/confirming a reading (Readback Edit/Confirm, type-it card) now stops any read in flight and calculates once for the confirmed text.
+- Live results (DATASET handwriting — HWRT test-set ink replayed by pointer, not the user's strokes): 3 + 2 = → local unsure ("3" 0.80) → student confirmed "Use it" → 5 (≈3.5 s after pen-up, 1 cloud read cancelled); 3 + 2 = 6 (wrong answer) → automatic, ✗, 0 cloud; 12 + 7 = → automatic, 19, 0 cloud; 8 + 5 = 13 → confirmed, ✓, 1 cloud read cancelled. Every answer anchored to its own line. Times are wall-clock from pen-up incl. the test's polling (≈0.3–0.6 s).
+- Edit race on live (INJECTED 6 s delay on the first /auto): "12 + 7 =" corrected to "12 + 8 =" (same ink) → old result discarded, only 20 shown.
+- Still not done: replay of the user's own strokes (needs their ⋯ → Export backup file).
