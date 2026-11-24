@@ -12,7 +12,7 @@ import { RecognitionScheduler, type ReadPhase } from '../recognition/scheduler'
 import { speak, stopSpeaking, voiceRepliesOn } from '../voice/speech'
 import { trace } from './trace'
 import { readLocally, localReaderEnabled, warmLocalReader, engineText, type LocalResult, type LocalAnswers } from '../recognition/localReader'
-import { ApiFailure, INTERACTIVE_DEADLINE_MS, TEACHING_DEADLINE_MS, api, type RequestContext, type TutorPayload, type TutorResult } from './api'
+import { ApiFailure, INTERACTIVE_DEADLINE_MS, TEACHING_DEADLINE_MS, api, type Clarification, type RequestContext, type TutorPayload, type TutorResult } from './api'
 import { placeBatch } from './layout'
 import { getLibrary } from '../handwriting/library'
 import { placeInk } from '../handwriting/place'
@@ -30,7 +30,11 @@ export interface TutorStatus {
   anchorRegionId?: string
   retry?: () => void
   retryable?: boolean
+  edit?: string // region whose text the student can type instead (recovery when reading fails)
 }
+
+/** A clarification NOVA is waiting for, with the action to run again once the student has chosen. */
+export interface PendingClarify extends Clarification { intent: Intent; question0: string }
 
 interface Options {
   stateRef: RefObject<DocState>
@@ -125,6 +129,7 @@ export function useNova(o: Options) {
   const lineDeadline = useRef(new Map<string, number>()) // when each line's attempt runs out (Date.now() ms)
   const lastEdited = useRef<string | null>(null)
   const anchorRects = useRef(new Map<string, Rect>()) // page-level requests: where on the page the answer belongs
+  const [clarify, setClarify] = useState<PendingClarify | null>(null)
   const lastTeaching = useRef<{ pageId: string; problemId?: string; currentId?: string } | null>(null) // follow-ups stay on this
   const speakReplies = useRef(new Set<string>()) // requests asked by voice: answer out loud
 
@@ -195,7 +200,8 @@ export function useNova(o: Options) {
     const deadline = changedAt + INTERACTIVE_DEADLINE_MS
     lineDeadline.current.set(`${regionId}:${region.sourceHash}`, deadline)
     const left = deadline - Date.now()
-    const outOfTime = new DOMException(`NOVA couldn't read this line in ${Math.round(INTERACTIVE_DEADLINE_MS / 1000)} s — the reading service is busy. Your ink is safe.`, 'TimeoutError')
+    // a deadline is a time-out, not evidence that the provider is busy (a real "busy" reply carries its own message)
+    const outOfTime = new DOMException(`No reading came back within NOVA's ${Math.round(INTERACTIVE_DEADLINE_MS / 1000)} s limit (time-out). Your ink is safe — Retry once, or type the expression.`, 'TimeoutError')
     const timer = setTimeout(() => { trace(key, 'deadline'); ctl.abort(outOfTime) }, Math.max(0, left))
     try {
       if (left <= 500) {
@@ -463,6 +469,7 @@ export function useNova(o: Options) {
     async (intent: Intent, question: string, selectedRegionId: string | null, extra?: { exam?: NonNullable<TutorPayload['exam']>; anchorRect?: Rect; speak?: boolean; workRegionId?: string }) => {
       const gen = ++tutorGen.current
       tutorAbort.current?.abort()
+      setClarify(null)
       const helpDeadline = Date.now() + TEACHING_DEADLINE_MS // shared by the reading step and the teaching call
       stopSpeaking()
       const p0 = page()
@@ -625,6 +632,11 @@ export function useNova(o: Options) {
 
   const apply = (p: Page, payload: TutorPayload, res: TutorResult, problemId?: string) => {
     const ctx = payload.context
+    if (res.clarify && !res.actions.length) {
+      setClarify({ ...res.clarify, intent: payload.intent as Intent, question0: payload.question })
+      opts.current.dispatch({ type: 'addTurns', pageId: p.id, turns: [{ role: 'student', text: payload.question || intentLabel(payload.intent), at: Date.now(), problemId }, { role: 'tutor', text: res.explanation, at: Date.now(), problemId }] })
+      return
+    }
     // in exam mode NOVA circles the question itself; the model's own highlights would point at the wrong lines
     const actions: TutorAction[] = payload.exam ? res.actions.filter((a) => a.type !== 'highlight_region') : [...res.actions]
     const hasNote = actions.some((a) => a.type === 'add_note' || a.type === 'speak')
@@ -753,29 +765,55 @@ export function useNova(o: Options) {
   /** The Solve button: a linear equation gets the explained solution (arrows, red moves, notes); anything else goes to the tutor. */
   /** One tap on Solve does everything: read the line if needed, graph a graph, otherwise write the worked answer. */
   const solveHere = useCallback(async (regionId: string) => {
+    setClarify(null)
     setStatus({ state: 'working', anchorRegionId: regionId, message: 'Solving…' })
+    let p = page()
+    if (!readingText(p?.readings[regionId])) {
+      try {
+        await ensureReading(regionId) // ONE bounded reading attempt
+      } catch (e) {
+        // the read failed or timed out: say so and offer Retry / typing it — never start a second hidden wait
+        const f = e instanceof ApiFailure ? e : new ApiFailure('READ_FAILED', 'NOVA could not read this line.', true)
+        if (f.code === 'CANCELLED') return setStatus({ state: 'idle' })
+        return setStatus({ state: 'error', message: f.message, retryable: true, retry: () => void solveHere(regionId), anchorRegionId: regionId, edit: regionId })
+      }
+      p = page()
+    }
+    const region = p?.regions.find((r) => r.id === regionId)
+    const text = readingText(p?.readings[regionId]) ?? ''
+    if (!text) return setStatus({ state: 'notice', message: 'NOVA has no reading for this line yet. Type the expression to continue.', anchorRegionId: regionId, edit: regionId })
+    // a graph only for "y = f(x)" / "f(x) = …": derivatives, integrals and limits are never sent to plotting
+    if (/^\s*(y|f\s*\(\s*x\s*\))\s*=/.test(text) && !/d\s*\/\s*d|∫|lim|[∪∩∈]/i.test(text)) {
+      setStatus({ state: 'idle' })
+      return void ask('plot', '', regionId)
+    }
     try {
-      let p = page()
-      if (!readingText(p?.readings[regionId])) {
-        await ensureReading(regionId) // not read yet: read it now instead of making the student tap twice
-        p = page()
-      }
-      const region = p?.regions.find((r) => r.id === regionId)
-      const text = readingText(p?.readings[regionId]) ?? ''
-      if (/[yY]/.test(text) && /[xXθ]/.test(text) && /=/.test(text) && !/[∪∩∈]/.test(text)) {
-        setStatus({ state: 'idle' })
-        return void ask('plot', '', regionId)
-      }
-      if (region && text && (await react(regionId, region.sourceHash, true))) {
-        setStatus({ state: 'idle' })
-        return
-      }
+      if (region && !region.typedId && (await react(regionId, region.sourceHash, true))) return setStatus({ state: 'idle' })
     } catch {
-      /* fall through to the tutor */
+      /* the exact path could not finish it: the solve request below shows its own result */
     }
     setStatus({ state: 'idle' })
     await ask('solve', '', regionId)
   }, [react, ask])
+
+  /** The student settled NOVA's notation question: their choice becomes the line's confirmed text (no OCR), then the
+   *  action they asked for runs again. */
+  const resolveClarify = useCallback(async (text: string) => {
+    const c = clarifyRef.current
+    if (!c) return
+    setClarify(null)
+    const p = page(), region = p?.regions.find((r) => r.id === c.regionId)
+    if (!p || !region) return
+    if (region.typedId) {
+      const b = p.typed?.find((x) => x.id === region.typedId)
+      if (b) opts.current.dispatch({ type: 'editTyped', pageId: p.id, id: b.id, text, display: text, w: b.w })
+    } else opts.current.dispatch({ type: 'acceptReading', pageId: p.id, regionId: c.regionId, text })
+    await waitFor(() => readingText(page()?.readings[c.regionId]) === text)
+    if (c.intent === 'solve') await solveHere(c.regionId)
+    else await ask(c.intent, c.question0, c.regionId)
+  }, [solveHere, ask])
+  const clarifyRef = useRef(clarify)
+  clarifyRef.current = clarify
 
   /** The student answered one of NOVA's own symbol questions: re-read locally with the answer. Resolved → the reading is
    *  shown for confirmation (not auto-accepted) and the cloud request is cancelled; still unsure → the next question. */
@@ -795,7 +833,7 @@ export function useNova(o: Options) {
     acceptLocal(p.id, regionId, lp.sourceHash, lr.result.literal, 'local-v3g + student', false)
   }, [])
 
-  return { phases, status, setStatus, ask, readNow, contentChanged, cancel, scheduler, solveHere, localPending, answerLocal }
+  return { phases, status, setStatus, ask, readNow, contentChanged, cancel, scheduler, solveHere, localPending, answerLocal, clarify, setClarify, resolveClarify }
 }
 
 export function intentLabel(intent: Intent): string {

@@ -219,3 +219,12 @@ Secrets: `server/.env`. Speech model: `server/models/` (`scripts/setup_speech.py
 - "Write" toolbar mic: spoken maths -> editable preview -> inserted as student text block (undo/redo/reload/export), never solved.
 - Spoken replies with Play/Stop, mute toggle, maths read naturally; follow-ups stay on last question; Explain writes expression + rule; full solution ends on engine-checked value.
 - Verified: server 258 + web 79 tests. NOT yet verified: Brave/browser journey with audio, real mic/speaker.
+
+## Write/speak → understand → teach → solve (2026-11-24, branch voice-dictation; local only, not deployed)
+- Recognition: a deadline now says "time-out" (not "service busy"); Solve makes ONE bounded reading attempt — a failed read stops with Retry + "Type the expression" (no hidden second 30 s wait). Typed corrections bypass OCR.
+- Notation is settled with the student before computing (server `maths/notation.py`, `clarify` in TutorResponse, card beside the line): ∫ without dx ("Use dx"), scope of sin x², dy/dx f(x) = derivative or equation. dy/dx = f(x) is treated as a differential equation (never as algebra, never auto-answered).
+- Closed problems (∫, d/dx, lim) get exact engine working on the page (`maths/worked.py`): ∫₀² x² dx → [x³/3]₀² → 8/3; ∫₀¹ x²/100 dx → 1/300; lim keeps θ symbolic. No exact method → model working labelled "not engine-checked".
+- Selection menu: Hint | Next step | Explain | Full solution | Check | Ask | Edit (+ Move | Delete for dictated). Graph only for y = f(x). Next step = one step (own teaching mode).
+- Dictated blocks: KaTeX, measured size, inserted in clear space in view; drag handle (zoom-correct, one undoable move, Esc cancels, anchored answers follow, no re-reading); identity = text only.
+- Ask by voice: "Done & Ask" (finish, bounded wait, send once); sent question shown at once; failed send restores the draft.
+- Verified: server 266, web 81 tests; live API checks with real BharatCode (see handoff). NOT verified: browser journeys (Playwright run not executed), real microphone/speaker, Brave by hand.

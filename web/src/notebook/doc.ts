@@ -55,8 +55,9 @@ export type DocAction =
   | { type: 'pageMeta'; pageId: string; bgState: Page['bgState'] | null; bgError?: string; docText?: DocLine[] }
   | { type: 'patchQuestion'; testId: string; questionId: string; patch: Partial<PaperQuestion> }
   | { type: 'addTyped'; pageId: string; block: TypedBlock; regionId: string; asProblem?: boolean }
-  | { type: 'editTyped'; pageId: string; id: string; text: string; display: string; w: number }
+  | { type: 'editTyped'; pageId: string; id: string; text: string; display: string; w: number; h?: number }
   | { type: 'deleteTyped'; pageId: string; id: string }
+  | { type: 'moveTyped'; pageId: string; id: string; x: number; y: number }
 
 export function newPage(notebookId: string, title: string, opts: Partial<Page> = {}): Page {
   return {
@@ -112,8 +113,21 @@ function regionFromStrokes(page: Page, id: string, strokeIds: string[], origin: 
   return r
 }
 
-export function typedHash(b: Pick<TypedBlock, 'id' | 'text' | 'x' | 'y' | 'w' | 'h'>): string {
-  return hashString(JSON.stringify({ typed: b.id, text: b.text, crop: [b.x, b.y, b.w, b.h].map((v) => Math.round(v)) }))
+/** Identity of a dictated block = its content only. Moving or resizing it is geometry: no re-reading, nothing goes stale. */
+export function typedHash(b: Pick<TypedBlock, 'id' | 'text'>): string {
+  return hashString(JSON.stringify({ typed: b.id, text: b.text }))
+}
+
+/** NOVA's writing that belongs to a block follows it when the block moves. */
+function shiftAnchored(page: Page, regionId: string | undefined, dx: number, dy: number): TutorObject[] {
+  if (!regionId || (!dx && !dy)) return page.tutorObjects
+  return page.tutorObjects.map((t) => {
+    if (t.anchorRegionId !== regionId || t.status === 'dismissed') return t
+    const layout = { ...t.layout, x: t.layout.x + dx, y: t.layout.y + dy }
+    if (t.action.type !== 'write_ink') return { ...t, layout }
+    const strokes = t.action.strokes.map((st) => st.map(([x, y, ...rest]) => [x + dx, y + dy, ...rest] as typeof st[number]))
+    return { ...t, layout, action: { ...t.action, strokes } }
+  })
 }
 
 /** A dictated block is read from its own text: an accepted reading, written by the student, never sent for OCR. */
@@ -322,11 +336,29 @@ export function docReducer(state: DocState, action: DocAction): DocState {
       const text = action.text.trim().slice(0, 300)
       if (!page || !old || !text || (text === old.text && action.display === old.display)) return state
       return contentChange(state, action.pageId, (p) => {
-        const b = { ...old, text, display: action.display, w: action.w }
+        const b = { ...old, text, display: action.display, w: action.w, h: action.h ?? old.h }
         const rid = p.regions.find((r) => r.typedId === b.id)?.id
         const prev = rid ? p.readings[rid] : undefined
         return { ...p, typed: (p.typed ?? []).map((x) => (x.id === b.id ? b : x)), readings: rid ? { ...p.readings, [rid]: typedReading(b, prev?.interpretationRevision ?? 0) } : p.readings }
       })
+    }
+
+    case 'moveTyped': {
+      // geometry only: undoable, but not a content change (no re-reading; answers in flight still apply, at the new place)
+      const page = state.doc.pages[action.pageId]
+      const b = page?.typed?.find((x) => x.id === action.id)
+      if (!page || !b) return state
+      const x = Math.round(Math.max(0, action.x)), y = Math.round(Math.max(0, action.y))
+      if (x === b.x && y === b.y) return state
+      const regionId = page.regions.find((r) => r.typedId === b.id)?.id
+      const nb = { ...b, x, y }
+      const next: Page = {
+        ...page,
+        typed: (page.typed ?? []).map((t) => (t.id === b.id ? nb : t)),
+        regions: page.regions.map((r) => (r.typedId === b.id ? { ...r, bounds: { x, y, w: b.w, h: b.h } } : r)),
+        tutorObjects: shiftAnchored(page, regionId, x - b.x, y - b.y),
+      }
+      return touch(state, action.pageId, next, pushUndo(state, action.pageId, page))
     }
 
     case 'deleteTyped': {
@@ -350,7 +382,13 @@ export function docReducer(state: DocState, action: DocAction): DocState {
       const stack = from[action.pageId] ?? []
       if (!page || !stack.length) return state
       const snap = stack[stack.length - 1]
-      const next = reconcile({ ...page, strokes: snap.strokes, regions: snap.regions, typed: snap.typed ?? [], contentRevision: page.contentRevision + 1 })
+      // a block that moves back takes its anchored answers with it
+      let tutorObjects = page.tutorObjects
+      for (const b of snap.typed ?? []) {
+        const cur = page.typed?.find((x) => x.id === b.id)
+        if (cur && (cur.x !== b.x || cur.y !== b.y)) tutorObjects = shiftAnchored({ ...page, tutorObjects }, page.regions.find((r) => r.typedId === b.id)?.id, b.x - cur.x, b.y - cur.y)
+      }
+      const next = reconcile({ ...page, tutorObjects, strokes: snap.strokes, regions: snap.regions, typed: snap.typed ?? [], contentRevision: page.contentRevision + 1 })
       const fromNext = { ...from, [action.pageId]: stack.slice(0, -1) }
       const toNext = { ...to, [action.pageId]: [...(to[action.pageId] ?? []), { strokes: page.strokes, regions: page.regions, typed: page.typed }] }
       return touch(state, action.pageId, next, action.type === 'undo' ? { undo: fromNext, redo: toNext } : { redo: fromNext, undo: toNext })

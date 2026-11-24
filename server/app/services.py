@@ -17,6 +17,8 @@ from .errors import ApiError
 from .images import decode_png
 from .maths.arith import check_arith, looks_arithmetic
 from .maths.hints import arith_hint
+from .maths.notation import differential_equation, notation_issue
+from .maths.worked import worked_solution
 from .maths.graph import graph
 from .maths.linear import MathError, check_step, fmt, is_isolated, parse_equation, solution_set
 from .maths.solve import SolveError, run as solve_run, tokenize as solve_tokenize, verify_content
@@ -330,6 +332,7 @@ def _build_prompt(req: TutorRequest, known: set[str], check: CheckResponse | Non
         "hint": "TEACHING MODE: hint. Give one useful next thought or question; leave their next line and the final answer to them.",
         "explain": "TEACHING MODE: explain. Explain the idea and WHY clearly, using their own work as the example; you may show how a step works, but leave the final value to them.",
         "solution": "TEACHING MODE: solution. Give the complete ordered worked solution, one step per line with its reason; hold nothing back.",
+        "next": "TEACHING MODE: next step. Give exactly ONE next line as a write_equation (the very next step from their current line) and one short sentence saying why. Do not go further, do not give the final answer unless this single step reaches it.",
     }[teaching_mode(req)])
     if req.exam:
         note = EXAM_REVIEW if req.exam.reveal else EXAM_NOTE
@@ -369,7 +372,9 @@ def teaching_mode(req: TutorRequest) -> str:
     A test question that has not been revealed is always hint."""
     if req.exam and not req.exam.reveal:
         return "hint"
-    if req.intent == "complete" or wants_full_solution(req) or (req.exam and req.exam.reveal):
+    if req.intent == "complete" and not wants_full_solution(req):
+        return "next"  # Next step: exactly one checked step, never the whole solution
+    if wants_full_solution(req) or (req.exam and req.exam.reveal):
         return "solution"
     if req.intent == "explain" or (req.intent == "ask" and _EXPLAIN_Q.search(req.question or "")):  # a typed question decides; the Hint button stays a hint
         return "explain"
@@ -415,6 +420,13 @@ def _checked_solution(req: TutorRequest, actions: list, rid: str) -> list:
     if not req.problem or not req.problem.text:
         return actions
     prob = req.problem.text
+    ws = worked_solution(prob)
+    if ws:
+        lines, final, _rule = ws
+        sol = _action_adapter.validate_python({"id": f"{rid}:s", "type": "write_lines", "anchorRegionId": req.problem.regionId if req.problem.regionId in _known_regions(req) else "page",
+                                               "title": "Full solution", "lines": [clean_math(x, 80) for x in lines], "inks": ["black"] + ["blue"] * (len(lines) - 1)})
+        sol.verified = [True] * len(sol.lines)
+        return [a for a in actions if a.type != "write_lines"] + [sol]
     exact = engine_value(prob)
     if exact:
         return _checked_value(prob, exact, actions, rid)
@@ -843,12 +855,18 @@ async def tutor(req: TutorRequest) -> TutorResponse:
     known = _known_regions(req)
     anchor = req.current.regionId if req.current else (req.problem.regionId if req.problem else ctx.regionId)
 
-    def done(explanation: str, actions: list, check=None, verified="none", model=None) -> TutorResponse:
+    def done(explanation: str, actions: list, check=None, verified="none", model=None, clarify=None) -> TutorResponse:
         detail = _DETAIL.get()  # already filtered for the teaching mode in _ask_model
         return TutorResponse(
             context=ctx, explanation=explanation, detail=detail, note=_NOTE.get() if _NOTE.get() and explanation.startswith(_NOTE.get() or "") else None, actions=actions, check=check, verifiedBy=verified, model=model,
-            latencyMs=int((time.perf_counter() - started) * 1000),
+            latencyMs=int((time.perf_counter() - started) * 1000), clarify=clarify,
         )
+
+    def lines_action(lines: list[str], title: str, anchor_id: str, verified: bool) -> Any:
+        act = _action_adapter.validate_python({"id": f"{rid}:w", "type": "write_lines", "anchorRegionId": anchor_id if anchor_id in known else "page",
+                                               "title": title, "lines": [clean_math(x, 80) for x in lines], "inks": ["black"] + ["blue"] * (len(lines) - 1)})
+        act.verified = [verified] * len(act.lines)
+        return act
 
     def plot_response(expr: str, lead: str = "") -> TutorResponse:
         try:
@@ -867,13 +885,43 @@ async def tutor(req: TutorRequest) -> TutorResponse:
 
     target = req.current or req.problem
 
+    # ---- notation to settle first: never guess a dx, the scope of a square, or what dy/dx means
+    if target and req.intent in ("solve", "complete", "check", "hint", "explain", "ask") and not req.exam:
+        issue = notation_issue(target.text)
+        if issue:
+            return done(issue.question, [], verified="none", clarify={"regionId": target.regionId, "kind": issue.kind, "question": issue.question,
+                                                                       "options": issue.options, "allowEdit": issue.allow_edit})
+        de = differential_equation(target.text)
+        if de and req.intent in ("solve", "complete"):
+            dep, var, rhs = de
+            lines = [f"d{dep}/d{var} = {rhs}", f"{dep} = ∫ {rhs} d{var} + C"]
+            return done(f"This is a differential equation, not an expression to differentiate: {dep} is the function whose derivative is {rhs}. "
+                        f"Its solution is {dep} = ∫ {rhs} d{var} + C (NOVA has not evaluated that integral exactly).",
+                        [lines_action(lines, "Differential equation", target.regionId, False)], verified="none")
+
+    # ---- closed problems (∫, d/dx, lim, expressions): exact worked lines from the engine, beside the question
+    if target and req.intent in ("solve", "complete") and not req.exam:
+        ws = await asyncio.to_thread(worked_solution, target.text)
+        if ws:
+            lines, final, rule = ws
+            if req.intent == "complete" and len(lines) > 2:
+                return done(f"Next step: {rule}." if rule else "Here is the next step.", [lines_action(lines[:2], "Next step", target.regionId, True)], verified="deterministic")
+            if req.intent == "solve":
+                return done(f"Worked out exactly by NOVA's engine{(' — ' + rule) if rule else ''}. Result: {final}.",
+                            [lines_action(lines, "Full solution", target.regionId, True)], verified="deterministic")
+
     # ---- solve: a full, verified answer (value of a "... =" line, or the solution set of an equation/inequality)
     if req.intent == "solve":
         if not target:
             raise ApiError("INVALID_INPUT", "Select the line you want solved.", rid, retryable=False)
         r = await asyncio.to_thread(solve_run, target.text, "auto")
         if r.status != "answered" or not r.answer:
-            return done(f"NOVA can't solve this exactly: {r.message or 'unsupported form'}", [], verified="none")
+            # not a notation problem (checked above): the engine has no exact method — NOVA's teacher writes the working instead
+            req = req.model_copy(update={"intent": "ask", "question": "Show me the full worked solution."})
+            explanation, raw, model = await _ask_model(req, known, None, [])
+            actions = await _verify_written(_validate_actions(raw, req, known, None, None))
+            lead = "NOVA's engine has no exact method for this, so this working is from NOVA's teacher and is not engine-checked. "
+            return done(lead + explanation, actions, verified="model", model=model)
         act = _action_adapter.validate_python({"id": f"{rid}:0", "type": "write_equation", "anchorRegionId": target.regionId, "expression": completed_line(target.text, r.answer), "purpose": "completion", "verified": True})
         note = {"solved": "Solved exactly by NOVA's maths engine.", "value": "Worked out exactly.", "simplified": "Simplified exactly.",
                 "expanded": "Expanded.", "factorised": "Factorised.", "rearranged": "Rearranged exactly.", "truth": "Checked exactly.", "integral": "Integrated exactly."}.get(r.kind or "", "Worked out exactly.")
@@ -1114,6 +1162,8 @@ def is_plain_arithmetic(t: str) -> bool:
 async def auto(text: str, problem: str | None, auto_answer: bool, diagram: str | None = None) -> dict:
     """Exact maths first; if that can't help and the line is a question, NOVA's maths model solves it."""
     t = re.sub(r"\s+", " ", text).strip()
+    if differential_equation(t) or notation_issue(t):
+        return {"kind": "none", "message": "Select this line to settle its notation, then choose Hint, Next step or Full solution."}
     if is_plain_arithmetic(t):
         # recognised arithmetic: the deterministic engine finishes or marks it; no second model call
         return await _auto_exact(re.sub(r"\s*\?\s*$", "", t).strip(), None, auto_answer)

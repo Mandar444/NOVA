@@ -120,7 +120,7 @@ def test_teaching_mode_follows_the_request():
     assert mode_of("I still don't understand") == "explain"
     assert mode_of("Show me the full worked solution") == "solution"
     assert mode_of("Why is it wrong?", intent="hint") == "hint"  # the Hint button stays a hint
-    assert mode_of("", intent="complete") == "solution"
+    assert mode_of("", intent="complete") == "next"  # Next step is one step, not the whole solution
     exam = {"number": "3", "text": "Solve 2(x + 3) = 14", "answer": "x = 4", "reveal": False}
     assert mode_of("Show me the full solution", exam=exam) == "hint"  # an unrevealed test never gives the solution
 

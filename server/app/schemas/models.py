@@ -269,6 +269,8 @@ class TutorResponse(BaseModel):
     verifiedBy: Literal["deterministic", "model", "none"] = "none"
     model: str | None = None
     latencyMs: int
+    # notation NOVA must settle with the student first (missing dx, scope of a square, dy/dx meaning): nothing computed
+    clarify: dict | None = None
 
 
 # ---------------------------------------------------------- capabilities

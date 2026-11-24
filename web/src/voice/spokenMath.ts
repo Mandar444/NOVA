@@ -404,3 +404,25 @@ export function prettyMath(text: string): string {
     .replace(/(\s)-(\s)/g, '$1−$2')
     .replace(/sqrt\(([^()]*)\)/g, '√($1)')
 }
+
+/** NOVA's canonical notation → safe TeX for KaTeX (display only; the canonical text stays the source of truth). */
+export function canonToTex(text: string): string {
+  let s = text.replace(/[\$#%&~]/g, ' ')
+  const group = (t: string) => t.replace(/^\{(.*)\}$/, '$1')
+  s = s.replace(/∫\s*_\{?([^}\s^]+)\}?\s*\^\{?([^}\s]+)\}?/g, (_, a: string, b: string) => `\int_{${group(a)}}^{${group(b)}} `)
+    .replace(/∫/g, '\int ')
+    .replace(/\bd([a-zθ])\b(?=\s*(=|$|\)))/g, '\,d$1')
+    .replace(/\bd\/d([a-z])\s*\(/g, '\frac{d}{d$1}\left(').replace(/\bd([a-z])\/d([a-z])\b/g, '\frac{d$1}{d$2}')
+    .replace(/\blim\s*_?\(?\s*([a-z])\s*(?:->|→)\s*([^\s)]+)\)?/g, '\lim_{$1 \to $2}')
+    .replace(/sqrt\(([^()]*)\)/g, '\sqrt{$1}')
+    .replace(/\^\(([^()]*)\)/g, '^{$1}').replace(/\^(-?[\w.]+)/g, '^{$1}')
+    .replace(/(?<![\w)])(\d+|[a-z])\s*\/\s*(\d+|[a-z])(?![\w(])/g, '\frac{$1}{$2}')
+    .replace(/\s\*\s/g, ' \times ').replace(/−/g, '-')
+    .replace(/\b(sin|cos|tan|ln|log|exp)\b/g, '\$1 ').replace(/θ/g, '\theta ').replace(/π/g, '\pi ')
+    .replace(/≤/g, '\le ').replace(/≥/g, '\ge ')
+  // balance \left( with \right)
+  const opens = (s.match(/\left\(/g) ?? []).length
+  let k = 0
+  s = s.replace(/\)/g, (m) => (k < opens && ++k ? '\right)' : m))
+  return s.replace(/\s+/g, ' ').trim()
+}

@@ -56,3 +56,13 @@ describe('spoken maths', () => {
     expect(prettyMath('x^2 + 3x - 4 = 0')).toBe('x² + 3x − 4 = 0')
   })
 })
+
+import katex from 'katex'
+import { canonToTex } from './spokenMath'
+describe('typesetting dictated maths', () => {
+  it('turns canonical text into valid TeX', () => {
+    expect(canonToTex('∫_0^2 x^2 dx')).toBe('\int_{0}^{2} x^{2} \,dx')
+    for (const t of ['∫_0^2 x^2 dx', 'x^2 + 3x - 4 = 0', 'd/dx(sin x)', '∫_0^1 x^2/100 dx', 'lim x->10 (3x + 4x - 6x sin θ)', 'dy/dx = sin(x^2)', 'Solve 2(x + 3) = 14'])
+      expect(() => katex.renderToString(canonToTex(t), { throwOnError: true })).not.toThrow()
+  })
+})

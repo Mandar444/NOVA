@@ -9,7 +9,8 @@ import { TutorLayer } from '../tutor/Annotations'
 import { useNova, type Intent } from '../tutor/useNova'
 import { AskPanel } from '../ui/AskPopover'
 import { DictatePanel } from '../ui/DictatePanel'
-import { TypedLayer, TYPED_FONT, typedWidth } from './TypedLayer'
+import { TypedLayer, TYPED_FONT, measureTyped } from './TypedLayer'
+import { prettyMath } from '../voice/spokenMath'
 import { TestPanel } from '../ui/TestPanel'
 import { StatusPill } from '../ui/StatusPill'
 import { AnswerFrames } from '../ui/AnswerFrames'
@@ -98,6 +99,8 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
   const [selected, setSelected] = useState<string | null>(null)
   const [ask, setAsk] = useState<{ mic: boolean; key: number; text?: string } | null>(null)
   const [dictate, setDictate] = useState<{ mic: boolean; key: number } | null>(null) // "Write on page" by voice
+  const [typedEdit, setTypedEdit] = useState<string | null>(null) // a dictated block being edited
+  const [typeFor, setTypeFor] = useState<{ regionId: string; text: string } | null>(null) // "Type the expression" for a line
   const [askAbout, setAskAbout] = useState<string | null>(null) // line the conversation is about (null = whole page)
   const [pagesOpen, setPagesOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -338,23 +341,22 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
   const insertTyped = (text: string, display: string, transcript: string) => {
     const pg = stateRef.current.doc.pages[pageId]
     if (!pg) return
-    const h = Math.round(TYPED_FONT * 1.5)
-    const w = typedWidth(display)
+    void display
+    const { w, h } = measureTyped(text, TYPED_FONT)
     const mine = pg.regions.filter((r) => r.bounds.w > 0)
     const taken: Rect[] = [...mine.map((r) => r.bounds), ...pg.tutorObjects.filter((t) => t.status === 'active').map((t) => t.layout)]
-    let x: number, y: number
+    const viewTop = (-view.ty + 140) / view.scale, viewBottom = (-view.ty + size.h - 120) / view.scale
+    let x = Math.max(40, (-view.tx + 80) / view.scale)
+    let y = Math.max(40, viewTop)
     if (mine.length) {
-      x = Math.max(24, Math.min(...mine.map((r) => r.bounds.x)))
-      y = Math.max(...mine.map((r) => r.bounds.y + r.bounds.h)) + 40
-    } else {
-      x = Math.max(40, (-view.tx + 80) / view.scale)
-      y = Math.max(40, (-view.ty + 150) / view.scale)
+      const below = Math.max(...mine.map((r) => r.bounds.y + r.bounds.h)) + 40
+      if (below >= viewTop && below + h <= viewBottom) { x = Math.max(24, Math.min(...mine.map((r) => r.bounds.x))); y = below }
     }
     const hits = (yy: number) => taken.some((t) => t.x < x + w && t.x + t.w > x && t.y < yy + h + 12 && t.y + t.h > yy - 12)
     for (let k = 0; k < 60 && hits(y); k++) y += 24
     const id = shortId('tb')
     const regionId = shortId('r')
-    dispatch({ type: 'addTyped', pageId, regionId, asProblem: true, block: { id, text, display, x, y, w, h, fontSize: TYPED_FONT, createdAt: Date.now(), source: 'dictation', transcript: transcript.slice(0, 600) } })
+    dispatch({ type: 'addTyped', pageId, regionId, asProblem: true, block: { id, text, display: prettyMath(text), x, y, w, h, fontSize: TYPED_FONT, createdAt: Date.now(), source: 'dictation', transcript: transcript.slice(0, 600) } })
     setTimeout(() => showRegion(regionId), 50)
     toast('Written on your page. Select it to ask NOVA for a hint, an explanation or the full solution.')
   }
@@ -403,6 +405,19 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
       setPracticeOpen({ example: readingText(page.readings[selected]) ?? null })
       setSelected(null)
       return
+    }
+    if (a === 'hint') { runIntent('hint', ''); return setSelected(null) }
+    if (a === 'explain') { runIntent('explain', 'Explain why.'); return setSelected(null) }
+    const tb = page.regions.find((r) => r.id === selected)?.typedId
+    if (a === 'edit') {
+      if (tb) setTypedEdit(tb)
+      else setTypeFor({ regionId: selected, text: readingText(page.readings[selected]) ?? '' })
+      return
+    }
+    if (a === 'move') return toast('Drag the ✥ Move handle above the question (or focus it and use the arrow keys).')
+    if (a === 'delete') {
+      if (tb) dispatch({ type: 'deleteTyped', pageId, id: tb })
+      return setSelected(null)
     }
     if (a === 'solve') void nova.solveHere(selected)
     else runIntent(a, '')
@@ -878,9 +893,14 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
               {activeTest && activeTest.pageIds.includes(page.id) && <AnswerFrames page={page} test={activeTest} current={currentQ} />}
               <TypedLayer
                 page={page}
+                scale={view.scale}
                 selectedRegionId={selected}
+                editingId={typedEdit}
                 onSelect={(id) => setSelected(id)}
-                onEdit={(id, text, display, w) => dispatch({ type: 'editTyped', pageId, id, text, display, w })}
+                onStartEdit={setTypedEdit}
+                onEditDone={() => setTypedEdit(null)}
+                onEdit={(id, text, sz) => dispatch({ type: 'editTyped', pageId, id, text, display: prettyMath(text), w: sz.w, h: sz.h })}
+                onMove={(id, x, y) => dispatch({ type: 'moveTyped', pageId, id, x, y })}
                 onDelete={(id) => { dispatch({ type: 'deleteTyped', pageId, id }); setSelected(null) }}
               />
               <TutorLayer
@@ -917,6 +937,35 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
                 }}
               />
               {selected && !ask && <RegionMenu page={page} view={view} regionId={selected} viewport={size} onAction={regionAction} />}
+              {(() => {
+                const c = nova.clarify
+                const recoverId = c?.regionId ?? typeFor?.regionId ?? nova.status.edit
+                const r = recoverId ? page.regions.find((x) => x.id === recoverId) : undefined
+                if (!r) return null
+                const left = Math.max(8, Math.min(size.w - 340, view.tx + r.bounds.x * view.scale))
+                const top = Math.max(8, view.ty + (r.bounds.y + r.bounds.h) * view.scale + 10)
+                const submit = (t: string) => {
+                  const text = t.trim()
+                  if (!text) return
+                  setTypeFor(null)
+                  if (c) return void nova.resolveClarify(text)
+                  // a typed correction is the confirmed reading: no OCR
+                  if (r.typedId) dispatch({ type: 'editTyped', pageId, id: r.typedId, text, display: prettyMath(text), ...measureTyped(text) })
+                  else dispatch({ type: 'acceptReading', pageId, regionId: r.id, text })
+                  nova.setStatus({ state: 'idle' })
+                }
+                return (
+                  <div className="clarify-card" data-testid="clarify-card" role="dialog" aria-label="NOVA needs one detail" style={{ left, top }} onPointerDown={(e) => e.stopPropagation()}>
+                    <div className="cc-q">{c ? c.question : nova.status.edit && !typeFor ? 'Type the expression so NOVA can continue (your ink stays).' : 'Type what this line says:'}</div>
+                    {c && c.options.map((o) => <button key={o.text} className="vb-btn" data-testid="clarify-option" onClick={() => submit(o.text)}>{o.label}</button>)}
+                    <form className="cc-edit" onSubmit={(e) => { e.preventDefault(); submit(new FormData(e.currentTarget).get('t') as string) }}>
+                      <input name="t" data-testid="clarify-input" defaultValue={typeFor?.text ?? (c ? '' : readingText(page.readings[r.id]) ?? '')} placeholder={c ? 'or type it differently' : 'e.g. ∫_0^1 x^2 dx'} aria-label="Type the expression" />
+                      <button className="vb-btn" type="submit">Use this</button>
+                      <button className="link" type="button" onClick={() => { setTypeFor(null); nova.setClarify(null); if (nova.status.edit) nova.setStatus({ state: 'idle' }) }}>Cancel</button>
+                    </form>
+                  </div>
+                )
+              })()}
             </>
           }
         />

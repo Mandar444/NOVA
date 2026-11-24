@@ -70,3 +70,24 @@ describe('dictated maths on the page', () => {
     expect(page().typed).toHaveLength(1)
   })
 })
+
+describe('moving dictated maths', () => {
+  it('is geometry only: reading and revision kept, anchored answers follow, one undo step', () => {
+    const { run, page, pageId } = setup()
+    run({ type: 'addTyped', pageId, block: block(), regionId: 'r1' })
+    const rev = page().contentRevision
+    const reading = page().readings.r1
+    run({ type: 'applyTutorBatch', pageId, contentRevision: rev, batchId: 'b', turns: [], objects: [{ id: 'sol', requestId: 'b', batchId: 'b', anchorRegionId: 'r1', sourceHash: page().regions[0].sourceHash, createdAt: 1, author: 'tutor', status: 'active', layout: { x: 80, y: 200, w: 100, h: 60, leader: false }, action: { id: 'sol', type: 'write_ink', anchorRegionId: 'r1', text: '= 8/3', strokes: [[[80, 200], [90, 210]]], width: 2, purpose: 'content', verified: true, tone: 'nova' } }] })
+    run({ type: 'moveTyped', pageId, id: 'tb1', x: 300, y: 400 })
+    expect(page().typed?.[0]).toMatchObject({ x: 300, y: 400 })
+    expect(page().regions[0].bounds).toMatchObject({ x: 300, y: 400 })
+    expect(page().contentRevision).toBe(rev) // answers in flight still apply
+    expect(page().readings.r1).toBe(reading) // no re-reading, nothing stale
+    const sol = page().tutorObjects.find((t) => t.id === 'sol')!
+    expect(sol.status).toBe('active')
+    expect(sol.layout).toMatchObject({ x: 300, y: 480 })
+    run({ type: 'undo', pageId })
+    expect(page().typed?.[0]).toMatchObject({ x: 80, y: 120 })
+    expect(page().tutorObjects.find((t) => t.id === 'sol')!.layout).toMatchObject({ x: 80, y: 200 })
+  })
+})

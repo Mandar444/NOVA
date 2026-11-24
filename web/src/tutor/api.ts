@@ -154,6 +154,16 @@ export interface TutorResult {
   verifiedBy: 'deterministic' | 'model' | 'none'
   model?: string | null
   latencyMs: number
+  clarify?: Clarification | null
+}
+
+/** Notation NOVA must settle with the student before computing (missing dx, scope of a square, what dy/dx means). */
+export interface Clarification {
+  regionId: string
+  kind: string
+  question: string
+  options: { label: string; text: string }[]
+  allowEdit: boolean
 }
 
 export interface TutorPayload {

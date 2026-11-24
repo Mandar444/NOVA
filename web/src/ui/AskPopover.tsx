@@ -1,7 +1,7 @@
 // Ask NOVA: a docked conversation beside the page. Stays open while you write, keeps the thread,
 // and lets you reply to NOVA. Push-to-talk fills the reply box with an editable transcript.
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Turn } from '../notebook/types'
 import type { Intent, TutorStatus } from '../tutor/useNova'
 import { useVoice } from '../voice/session'
@@ -73,14 +73,34 @@ export function AskPanel({ docked, startWithMic, initialText, turns, status, abo
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: 'smooth' })
   }, [turns.length, status.state])
 
-  const send = (intent: Intent, q: string) => {
-    if (listening) return // never sent while words are still arriving
+  // the question just sent: shown at once; if the request fails, it goes back into the box (never lost)
+  const [sent, setSent] = useState<{ text: string; turns: number; restored: boolean } | null>(null)
+  const sending = useRef(false)
+  const send = (intent: Intent, q: string, spokenOverride?: boolean) => {
+    if (listening || sending.current) return // never sent while words are still arriving; never twice
+    sending.current = true
     const own = q.trim() === voice.draft.trim()
-    const spoken = own && voice.spoken
+    const spoken = spokenOverride ?? (own && voice.spoken)
     stopSpeaking()
     if (own) session.consume()
+    if (q.trim()) setSent({ text: q.trim(), turns: turns.length, restored: false })
     onSend(intent, q, { voice: spoken })
+    setTimeout(() => (sending.current = false), 400)
   }
+  /** Done & Ask: finish the capture, wait for the final words (bounded), then send exactly once. */
+  const doneAndAsk = async () => {
+    const spoken = true
+    const final = await session.finishAndWait(15_000)
+    if (final) send('ask', final, spoken)
+  }
+  useEffect(() => {
+    if (!sent) return
+    if (turns.length > sent.turns) return setSent(null) // the reply (and the question) are in the thread now
+    if (status.state === 'error' && !sent.restored) {
+      if (!session.get().draft.trim()) session.setDraft(sent.text) // failed: the question is back in the box for Retry/Send
+      setSent({ ...sent, restored: true })
+    }
+  }, [turns.length, status.state, sent, session])
   const text = voice.draft
   const repliesOn = voiceRepliesOn()
 
@@ -135,6 +155,7 @@ export function AskPanel({ docked, startWithMic, initialText, turns, status, abo
             {t.role === 'tutor' && speech.key === `turn:${t.at}` && speech.message && <div className="speak-msg" data-testid="speak-msg" role="status">{speech.message}</div>}
           </div>
         ))}
+        {sent && !sent.restored && <div className="bubble student pending" data-testid="sent-pending">{sent.text}</div>}
         {busy && (
           <div className="bubble tutor thinking" aria-label="NOVA is answering">
             <span className="skel" /><span className="skel" /><span className="skel short" />
@@ -176,6 +197,7 @@ export function AskPanel({ docked, startWithMic, initialText, turns, status, abo
         />
         <button className="icon-btn send" aria-label="Send" disabled={!text.trim() || listening} onClick={() => send('ask', text.trim())}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg></button>
       </div>
+      {voice.status === 'listening' && <div className="voice-done"><button className="vb-btn strong" data-testid="voice-done-ask" onClick={() => void doneAndAsk()}>✓ Done &amp; Ask</button><span className="voice-note">or Stop to review first</span></div>}
       <VoiceControls state={voice} session={session} sendHint="then press Send — nothing is sent by itself" />
     </aside>
   )

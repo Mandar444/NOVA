@@ -198,7 +198,7 @@ export function ReadbackLayer({ page, view, phases, selectedRegionId, hoveredReg
   )
 }
 
-export type RegionMenuAction = 'ask' | 'read' | 'check' | 'complete' | 'solve' | 'plot' | 'problem' | 'practice' | 'close'
+export type RegionMenuAction = 'ask' | 'read' | 'check' | 'complete' | 'solve' | 'plot' | 'problem' | 'practice' | 'close' | 'hint' | 'explain' | 'edit' | 'move' | 'delete'
 
 interface MenuProps {
   page: Page
@@ -246,12 +246,17 @@ export function RegionMenu({ page, view, regionId, viewport, onAction }: MenuPro
   const text = readingText(reading) ?? ''
   return (
     <div className="region-menu" style={pos} onPointerDown={(e) => e.stopPropagation()} role="toolbar" aria-label="Selected work">
-      <button className="menu-btn" onClick={() => onAction('ask')}><Icon.ask /> Ask</button>
-      <button className="menu-btn" onClick={() => onAction('read')}><Icon.read /> Read</button>
+      <button className="menu-btn" data-testid="menu-hint" onClick={() => onAction('hint')}>Hint</button>
+      <button className="menu-btn" data-testid="menu-next" onClick={() => onAction('complete')}>Next step</button>
+      <button className="menu-btn" data-testid="menu-explain" onClick={() => onAction('explain')}>Explain</button>
+      <button className="menu-btn strong" data-testid="menu-full" onClick={() => onAction('solve')}>Full solution</button>
       <button className="menu-btn" onClick={() => onAction('check')}><Icon.check /> Check</button>
-      <button className="menu-btn" onClick={() => onAction('complete')}>Next step</button>
-      {(!reading || /[=<>≤≥]/.test(text)) && <button className="menu-btn" onClick={() => onAction('solve')}>Solve</button>}
-      {(!reading || /[xyθ]/i.test(text)) && <button className="menu-btn" onClick={() => onAction('plot')}><Icon.graph /> Graph</button>}
+      <button className="menu-btn" onClick={() => onAction('ask')}><Icon.ask /> Ask</button>
+      <button className="menu-btn" data-testid="menu-edit" onClick={() => onAction('edit')}>Edit</button>
+      {region.typedId && <button className="menu-btn" data-testid="menu-move" onClick={() => onAction('move')}>Move</button>}
+      {region.typedId && <button className="menu-btn" data-testid="menu-delete" onClick={() => onAction('delete')}>Delete</button>}
+      {!region.typedId && <button className="menu-btn" onClick={() => onAction('read')}><Icon.read /> Read</button>}
+      {(!reading || /^\s*(y|f\s*\(\s*x\s*\))\s*=/i.test(text)) && <button className="menu-btn" onClick={() => onAction('plot')}><Icon.graph /> Graph</button>}
       {!!text && /\d/.test(text) && <button className="menu-btn" onClick={() => onAction('practice')} title="NOVA writes 5 more questions like this one"><Icon.target /> Practice</button>}
       {!isProblem && /x/i.test(text) && text.includes('=') && !text.trim().endsWith('=') && <button className="menu-btn" onClick={() => onAction('problem')}>Set as problem</button>}
       <button className="icon-btn sm" aria-label="Clear selection" onClick={() => onAction('close')}><Icon.close /></button>

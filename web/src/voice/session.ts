@@ -255,6 +255,21 @@ export class VoiceSession {
     else this.settle()
   }
 
+  /** Done: finish capturing and wait (bounded) for the last words to be transcribed. Resolves with the final draft,
+   *  or null if transcription did not finish in time / failed (the draft and kept audio stay for Retry or editing). */
+  async finishAndWait(ms = 15_000): Promise<string | null> {
+    if (this.state.status === 'listening') this.stop()
+    const end = Date.now() + ms
+    while (Date.now() < end) {
+      const st = this.state.status
+      if (st === 'ready' || st === 'paused' || st === 'idle') return this.state.draft.trim() || null
+      if (st === 'error') return null
+      await new Promise((r) => setTimeout(r, 100))
+    }
+    this.set({ error: `The last part is still being transcribed after ${Math.round(ms / 1000)} s. Your words are kept — press Send when it appears, or edit the text.` })
+    return null
+  }
+
   /** Cancel: discard only what this capture added; the earlier draft (and the student's edits) stay. */
   cancel() {
     const dropped = this.capture
