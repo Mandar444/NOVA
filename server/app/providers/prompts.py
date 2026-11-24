@@ -14,6 +14,11 @@ How handwritten symbols look (use stroke shapes, not expectations):
   usually means multiply: write it as "*" ONLY if it is clearly a multiplication sign between numbers; otherwise write x.
 - A small digit/letter written raised to the upper right of a symbol is a power: write "^" (x² -> x^2, 2³ -> 2^3).
 - A horizontal bar with something above and below is a fraction: write (top)/(bottom).
+- Integral sign ∫: a number/letter written ABOVE or at the TOP of the sign is the UPPER limit, one written BELOW or at the
+  BOTTOM is the LOWER limit (0 is a valid limit). Write them as ∫_lower^upper, e.g. "∫_0^2 x^2 dx", "∫_1^12 t dt".
+  A number written to the LEFT of the sign, on the same baseline as the rest of the line, is a coefficient: "3 ∫ x^2 dx".
+  Keep both when both are written ("3 ∫_0^2 x^2 dx"). Never move a limit to the front of the line, never drop one, and
+  write dx only if it is written. If you cannot tell a limit from a coefficient, set needsClarification and give both.
 - Common confusions: 1 vs 7 vs /, 2 vs z, 5 vs s, 0 vs o, 6 vs b, 9 vs g vs q, 4 vs y, x vs ×, ( vs 1, - vs =.
   Decide from the actual stroke shape. If you genuinely cannot decide, give the other full reading in "alternatives".
 - MATRICES (numbers in a grid inside big [ ] or ( ) brackets): write row by row inside [ ], numbers separated by

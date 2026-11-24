@@ -164,6 +164,7 @@ export interface Clarification {
   question: string
   options: { label: string; text: string }[]
   allowEdit: boolean
+  template?: string | null // an editable starting point, e.g. "∫_?^1166 x^2" (never invented values)
 }
 
 export interface TutorPayload {

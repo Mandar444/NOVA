@@ -76,7 +76,7 @@ def test_general_explain_question_writes_expression_and_rule(monkeypatch):
     w = [a for a in j["actions"] if a["type"] == "write_lines"]
     assert w, j
     lines = w[0]["lines"]
-    assert lines[0].replace("^2", "²") == "∫ x² dx" and any("xⁿ⁺¹" in x for x in lines)
+    assert lines[0].replace("^2", "²") == "∫ x² dx" and any(("xⁿ⁺¹" in x or "x^(n+1)" in x) for x in lines)
     assert not any("x³/3" in x for x in lines)  # the rule, not the worked answer
 
 
@@ -86,7 +86,7 @@ def test_explain_on_a_dictated_integral_keeps_rule_hides_value(monkeypatch):
     monkeypatch.setattr(services, "provider", Fake(reply))
     j = client.post("/api/v1/tutor", json=tbody("Explain this", problem="∫_0^2 x^2 dx", intent="explain", region="rP")).json()
     lines = [a for a in j["actions"] if a["type"] == "write_lines"][0]["lines"]
-    assert any("xⁿ⁺¹" in x for x in lines) and not any(x.replace(" ", "").endswith("=8/3") for x in lines)
+    assert any(("xⁿ⁺¹" in x or "x^(n+1)" in x) for x in lines) and not any(x.replace(" ", "").endswith("=8/3") for x in lines)
 
 
 def test_full_solution_of_a_closed_problem_ends_on_the_checked_value(monkeypatch):

@@ -19,6 +19,7 @@ class Issue:
     question: str
     options: list[dict] = field(default_factory=list)  # {"label", "text"}
     allow_edit: bool = True
+    template: str | None = None  # an editable starting point for "type it" (never with invented values)
 
 
 def _sup(s: str) -> str:
@@ -33,6 +34,34 @@ def _candidates(body: str) -> list[str]:
 def _split_eq(text: str) -> tuple[str, str]:
     t = text.rstrip()
     return (t[:-1].rstrip(), " =") if t.endswith("=") else (t, "")
+
+
+_COEF_BEFORE = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*∫(?!\s*_)")  # "1166 ∫ x^2": coefficient, or a misread upper limit?
+_ONLY_UPPER = re.compile(r"∫\s*\^\s*\{?([^}\s]+)\}?")  # "∫^2 x^2": the lower limit is missing
+_ONLY_LOWER = re.compile(r"∫\s*_\s*\{?([^}\s^]+)\}?(?!\s*\^)")  # "∫_0 x^2": the upper limit is missing
+
+
+def limits_issue(text: str) -> Issue | None:
+    """A definite integral whose limits are doubtful: never solve a guess. Explicit "3 * ∫" is a confirmed coefficient."""
+    if "∫" not in text:
+        return None
+    m = _COEF_BEFORE.match(text)
+    if m:
+        n, rest = m.group(1), text[m.end():].strip()
+        return Issue("limit_or_coefficient", f"Is {n} a number multiplying the integral, or the integral's upper limit?",
+                     [{"label": f"{n} × the integral", "text": f"{n} * ∫ {rest}"}],
+                     template=f"∫_?^{n} {rest}")
+    m = _ONLY_UPPER.search(text)
+    if m and not re.search(r"∫\s*_", text):
+        return Issue("missing_lower_limit", f"The integral has an upper limit ({m.group(1)}) but no lower limit. What is the lower limit?", [],
+                     template=text.replace(m.group(0), f"∫_?^{m.group(1)}", 1))
+    m = _ONLY_LOWER.search(text)
+    if m:
+        return Issue("missing_upper_limit", f"The integral has a lower limit ({m.group(1)}) but no upper limit. What is the upper limit?", [],
+                     template=text.replace(m.group(0), f"∫_{m.group(1)}^?", 1))
+    if re.search(r"∫\s*_\s*\??\s*\^|\^\s*\?", text) or "_?" in text:
+        return Issue("unknown_limit", "One of the integral's limits is still a “?”. Type the number.", [], template=text)
+    return None
 
 
 def integral_issue(text: str) -> Issue | None:
@@ -113,4 +142,4 @@ def differential_equation(text: str) -> tuple[str, str, str] | None:
 
 
 def notation_issue(text: str) -> Issue | None:
-    return integral_issue(text) or derivative_issue(text)
+    return limits_issue(text) or integral_issue(text) or derivative_issue(text)

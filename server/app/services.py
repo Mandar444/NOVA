@@ -85,11 +85,17 @@ def clean_text(s: Any, limit: int) -> str:
 _ASCII_MATH = {"−": "-", "–": "-", "×": "*", "÷": "/", "²": "^2", "³": "^3", "\\times": "*", "\\cdot": "*", "\\div": "/", "\\": ""}
 
 
+_SUP_RUN = re.compile("[⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺ⁿ]+")
+_SUP_DIGITS = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺ⁿ", "0123456789-+n")
+
+
 def clean_math(s: Any, limit: int = MAX_EQUATION_CHARS) -> str:
     if not isinstance(s, str):
         return ""
     s = delatex(s)
     s = _CTRL.sub("", s)
+    # a whole run of superscript digits is ONE exponent/limit: "¹²" → "^(12)" (not "¹^2"); single ones stay "^2"
+    s = _SUP_RUN.sub(lambda m: "^" + (m.group(0).translate(_SUP_DIGITS) if len(m.group(0)) == 1 else "(" + m.group(0).translate(_SUP_DIGITS) + ")"), s)
     for a, b in _ASCII_MATH.items():
         s = s.replace(a, b)
     s = re.sub(r"\s+", " ", s).strip()
@@ -479,14 +485,30 @@ def engine_value(problem: str | None) -> str | None:
 
 
 _SPOKEN_POW = {"squared": "²", "cubed": "³"}
+_WORD_NUM = {"zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+             "eleven": 11, "twelve": 12, "twenty": 20, "hundred": 100}
+
+
+def _spoken_number(w: str) -> str | None:
+    w = w.strip().lower().strip(".,?!")
+    if re.fullmatch(r"-?\d+(\.\d+)?", w):
+        return w
+    return str(_WORD_NUM[w]) if w in _WORD_NUM else None
 
 
 def topic_expression(question: str) -> str | None:
     """'Help me understand integration of x squared' → '∫ x² dx' (only when the expression is plainly stated)."""
-    m = re.search(r"\b(?:integrat\w*|integral)\s+of\s+([a-z0-9 ^²³+\-]+?)(?:\s+from\b.*)?[?.!]*$", question.strip(), re.I)
+    m = re.search(r"\b(?:integrat\w*|integral)\s+of\s+([a-z0-9 ^²³+\-]+?)(?:\s+(?:from|between)\s+(\S+)\s+(?:to|and)\s+(\S+?))?[?.!]*$", question.strip(), re.I)
     if m:
         body = re.sub(r"\s+(squared|cubed)\b", lambda k: _SPOKEN_POW[k.group(1).lower()], m.group(1).strip())
         if re.fullmatch(r"[a-z0-9 ^²³+\-]{1,30}", body, re.I):
+            if m.group(2):
+                lo, hi = _spoken_number(m.group(2)), _spoken_number(m.group(3))
+                if lo is None or hi is None:
+                    return None  # limits were said but not understood: never drop them silently
+                return f"∫_{lo}^{hi} {body} dx"
+            if re.search(r"\b(from|between)\b", question, re.I):
+                return None  # a "from ..." that did not parse: no indefinite integral in its place
             return f"∫ {body} dx"
     m = re.search(r"\b(?:differentiat\w*|derivative of)\s+([a-z0-9 ^²³+\-]+?)[?.!]*$", question.strip(), re.I)
     if m:
@@ -891,7 +913,7 @@ async def tutor(req: TutorRequest) -> TutorResponse:
         issue = notation_issue(target.text)
         if issue:
             return done(issue.question, [], verified="none", clarify={"regionId": target.regionId, "kind": issue.kind, "question": issue.question,
-                                                                       "options": issue.options, "allowEdit": issue.allow_edit})
+                                                                       "options": issue.options, "allowEdit": issue.allow_edit, "template": issue.template})
         de = differential_equation(target.text)
         if de and req.intent in ("solve", "complete"):
             dep, var, rhs = de
