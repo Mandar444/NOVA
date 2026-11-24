@@ -30,8 +30,9 @@ interface Props {
   hoveredRegionId?: string | null // labels show only for the line under the mouse (or the latest line on touch screens)
   onAccept: (regionId: string, text: string) => void
   onRetry: (regionId: string) => void
+  onTypeIt?: (regionId: string) => void // recognition failed or unsure: type the expression (no OCR)
   onSelect: (regionId: string) => void
-  onQuick: (regionId: string, intent: 'plot' | 'solve' | 'ask' | 'hint' | 'explain') => void
+  onQuick: (regionId: string, intent: 'plot' | 'solve' | 'ask' | 'hint' | 'explain' | 'complete') => void
   showAccepted?: boolean // the 'I read' chip on lines NOVA has read (Settings › Show what NOVA read)
 }
 
@@ -51,7 +52,7 @@ function Waiting({ since, onStop, children }: { since?: number; onStop?: () => v
   )
 }
 
-export function ReadbackLayer({ page, view, phases, selectedRegionId, hoveredRegionId, onAccept, onRetry, onSelect, onQuick, showAccepted = true, localPending = {}, onLocalAnswer, onStop }: Props) {
+export function ReadbackLayer({ page, view, phases, selectedRegionId, hoveredRegionId, onAccept, onRetry, onTypeIt, onSelect, onQuick, showAccepted = true, localPending = {}, onLocalAnswer, onStop }: Props) {
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
   const [open, setOpen] = useState<string | null>(null) // the line whose help card is open
   // labels sit just under a line, where the next line gets written: only typing fields keep the pen;
@@ -110,7 +111,7 @@ export function ReadbackLayer({ page, view, phases, selectedRegionId, hoveredReg
           if (phase?.phase === 'failed')
             return (
               <div className="readback failed">
-                {phase.error && /busy|took too long|read this line in|time/i.test(phase.error) ? phase.error : phase.error && /could not reach|cannot reach/i.test(phase.error) ? "Couldn't reach the reading service. Your ink is safe." : "Couldn't read this line."} <button className="link" onClick={() => onRetry(region.id)}>Retry</button>
+                {phase.error && /busy|took too long|read this line in|time/i.test(phase.error) ? phase.error : phase.error && /could not reach|cannot reach/i.test(phase.error) ? "Couldn't reach the reading service. Your ink is safe." : "Couldn't read this line."} <button className="link" onClick={() => onRetry(region.id)}>Retry</button>{onTypeIt && <button className="link" data-testid="type-it" onClick={() => onTypeIt(region.id)}>Type it</button>}
                 {reading?.state === 'readback_ready' && reading.rawText && <span> · NOVA's own reading: <span className="mono">{reading.rawText}</span> <button className="link strong" onClick={() => onAccept(region.id, reading.rawText)}>Use it</button> <button className="link" onClick={() => setEditing({ id: region.id, text: reading.rawText })}>Edit</button></span>}
                 {localQs}
               </div>
@@ -125,7 +126,7 @@ export function ReadbackLayer({ page, view, phases, selectedRegionId, hoveredReg
           if (reading.state === 'accepted') {
             const c = reading.check
             const t = reading.acceptedText ?? ''
-            const go = (intent: 'plot' | 'solve' | 'ask' | 'hint' | 'explain') => { setOpen(null); onQuick(region.id, intent) }
+            const go = (intent: 'plot' | 'solve' | 'ask' | 'hint' | 'explain' | 'complete') => { setOpen(null); onQuick(region.id, intent) }
             if (open !== region.id) {
               if (!showAccepted && !selected) return null
               return (
@@ -149,6 +150,7 @@ export function ReadbackLayer({ page, view, phases, selectedRegionId, hoveredReg
                 {c && <div className={`rb-check ${c.status}`}>{CHECK_LABEL[c.status]}</div>}
                 <div className="rb-help">
                   <button className="rb-opt hint" aria-label="Hint: a small nudge" onClick={() => go('hint')}><b><Icon.bulb />Hint</b><span>A nudge</span></button>
+                  <button className="rb-opt next" data-testid="rb-next" aria-label="Next step: one step" onClick={() => go('complete')}><b>Next step</b><span>One step</span></button>
                   <button className="rb-opt explain" aria-label="Explain: why this step" onClick={() => go('explain')}><b><Icon.book />Explain</b><span>The why</span></button>
                   <button className="rb-opt solution" aria-label="Full solution: all steps" onClick={() => go('solve')}><b><Icon.steps />Full solution</b><span>All steps</span></button>
                 </div>

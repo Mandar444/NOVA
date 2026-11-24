@@ -28,6 +28,7 @@ interface Props {
 // the three kinds of help, always separate (plus a check of the line)
 const QUICK_LINE: { label: string; intent: Intent; q: string; tone: string }[] = [
   { label: 'Hint', intent: 'hint', q: '', tone: 'hint' },
+  { label: 'Next step', intent: 'complete', q: '', tone: '' },
   { label: 'Explain', intent: 'explain', q: 'Explain why.', tone: 'explain' },
   { label: 'Full solution', intent: 'ask', q: 'Show me the full worked solution.', tone: 'solution' },
   { label: 'Check', intent: 'check', q: '', tone: '' },

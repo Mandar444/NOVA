@@ -176,7 +176,7 @@ export interface TutorPayload {
   plotExpression?: string | null
   regionIds: string[]
   pageLines?: { regionId: string; text: string; accepted: boolean }[]
-  exam?: { number: string; text: string; answer: string; reveal: boolean } | null
+  exam?: { id?: string; number: string; text: string; answer: string; reveal: boolean } | null
 }
 
 export const api = {

@@ -58,6 +58,7 @@ export type DocAction =
   | { type: 'editTyped'; pageId: string; id: string; text: string; display: string; w: number; h?: number }
   | { type: 'deleteTyped'; pageId: string; id: string }
   | { type: 'moveTyped'; pageId: string; id: string; x: number; y: number }
+  | { type: 'ownAnswers'; owners: { testId: string; regionId: string; questionId: string }[] }
 
 export function newPage(notebookId: string, title: string, opts: Partial<Page> = {}): Page {
   return {
@@ -562,6 +563,17 @@ export function docReducer(state: DocState, action: DocAction): DocState {
       if (action.bgError) next.bgError = action.bgError
       else delete next.bgError
       return touch(state, action.pageId, next)
+    }
+
+    case 'ownAnswers': {
+      if (!action.owners.length) return state
+      const tests = { ...(state.doc.tests ?? {}) }
+      for (const o of action.owners) {
+        const t = tests[o.testId]
+        if (!t || t.answerOwners?.[o.regionId]) continue // recorded once: never re-guessed later
+        tests[o.testId] = { ...t, answerOwners: { ...(t.answerOwners ?? {}), [o.regionId]: o.questionId } }
+      }
+      return { ...state, doc: { ...state.doc, tests }, dirty: state.dirty + 1 }
     }
 
     case 'setTest':

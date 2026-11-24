@@ -319,7 +319,8 @@ export function Workspace(p: Props) {
       clearLive()
       if (cancelled) return
       const last = g.path[g.path.length - 1]
-      const moved = Math.hypot(last.x - g.start.x, last.y - g.start.y) * props.current.view.scale
+      // how far the gesture travelled (a closed lasso ends where it started, but it is not a tap)
+      const moved = Math.max(0, ...g.path.map((q) => Math.hypot(q.x - g.start.x, q.y - g.start.y))) * props.current.view.scale
       if (moved < 6) props.current.onSelect({ tap: g.start })
       else if (props.current.lasso && g.path.length > 4) props.current.onSelect({ lasso: g.path })
       else props.current.onSelect({ rect: normRect(g.start, last) })

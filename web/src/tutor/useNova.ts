@@ -33,8 +33,10 @@ export interface TutorStatus {
   edit?: string // region whose text the student can type instead (recovery when reading fails)
 }
 
-/** A clarification NOVA is waiting for, with the action to run again once the student has chosen. */
-export interface PendingClarify extends Clarification { intent: Intent; question0: string }
+/** A clarification NOVA is waiting for, with the action to run again once the student has chosen. Keyed by the line it
+ *  is about and the content it was asked for: a late reply never replaces another question's card. */
+export interface PendingClarify extends Clarification { intent: Intent; question0: string; sourceHash: string; exam?: AskExtra['exam']; anchorRect?: Rect; workRegionId?: string }
+export interface AskExtra { exam?: NonNullable<TutorPayload['exam']>; anchorRect?: Rect; speak?: boolean; workRegionId?: string; historyKey?: string }
 
 interface Options {
   stateRef: RefObject<DocState>
@@ -129,8 +131,13 @@ export function useNova(o: Options) {
   const lineDeadline = useRef(new Map<string, number>()) // when each line's attempt runs out (Date.now() ms)
   const lastEdited = useRef<string | null>(null)
   const anchorRects = useRef(new Map<string, Rect>()) // page-level requests: where on the page the answer belongs
-  const [clarify, setClarify] = useState<PendingClarify | null>(null)
-  const lastTeaching = useRef<{ pageId: string; problemId?: string; currentId?: string } | null>(null) // follow-ups stay on this
+  const [clarifies, setClarifies] = useState<Record<string, PendingClarify>>({})
+  const clarifyRef = useRef(clarifies)
+  clarifyRef.current = clarifies
+  const dropClarify = (regionId?: string) => setClarifies((prev) => { if (!regionId) return {}; if (!prev[regionId]) return prev; const n = { ...prev }; delete n[regionId]; return n })
+  const solveSeq = useRef(0) // one Full-solution flow at a time: a newer request makes an older one stop before it asks
+  const extras = useRef(new Map<string, AskExtra>()) // requestId → the question context it was asked with
+  const lastTeaching = useRef<{ pageId: string; problemId?: string; currentId?: string; extra?: AskExtra } | null>(null) // follow-ups stay on this
   const speakReplies = useRef(new Set<string>()) // requests asked by voice: answer out loud
 
   const page = () => opts.current.stateRef.current!.doc.pages[opts.current.pageId]
@@ -466,10 +473,12 @@ export function useNova(o: Options) {
   }
 
   const ask = useCallback(
-    async (intent: Intent, question: string, selectedRegionId: string | null, extra?: { exam?: NonNullable<TutorPayload['exam']>; anchorRect?: Rect; speak?: boolean; workRegionId?: string }) => {
+    async (intent: Intent, question: string, selectedRegionId: string | null, extra0?: AskExtra) => {
+      let extra = extra0
       const gen = ++tutorGen.current
+      solveSeq.current++ // any newer help request supersedes a Full-solution flow still preparing
       tutorAbort.current?.abort()
-      setClarify(null)
+      if (selectedRegionId) dropClarify(selectedRegionId)
       const helpDeadline = Date.now() + TEACHING_DEADLINE_MS // shared by the reading step and the teaching call
       stopSpeaking()
       const p0 = page()
@@ -492,13 +501,18 @@ export function useNova(o: Options) {
       let problemId: string | undefined
       let currentId: string | undefined
       let followUp = false
+      if (!extra?.exam && intent === 'ask' && !sel && FOLLOW_UP.test(question) && lastTeaching.current?.pageId === p1.id && lastTeaching.current.extra?.exam) {
+        extra = { ...lastTeaching.current.extra, speak: extra?.speak } // follow-up on a printed question: same question, same work
+      }
       if (extra?.exam) {
         // a printed question: the student's latest working under it (if any) is the current step
-        if (extra.workRegionId && p1.regions.some((r) => r.id === extra.workRegionId)) currentId = extra.workRegionId
+        const w = extra.workRegionId
+        if (w && p1.regions.some((r) => r.id === w)) currentId = w
       } else if (intent === 'ask' && !sel && FOLLOW_UP.test(question) && lastTeaching.current?.pageId === p1.id) {
         // "I still don't understand" / "why?": the same question as the last teaching turn, even if another line was written since
         const lt = lastTeaching.current
         followUp = true
+        if (lt.extra?.exam && !extra?.exam) extra = { ...lt.extra, speak: extra?.speak } // "Why?" on a printed question stays on it
         problemId = lt.problemId && p1.regions.some((r) => r.id === lt.problemId) ? lt.problemId : undefined
         currentId = lt.currentId && p1.regions.some((r) => r.id === lt.currentId) ? lt.currentId : undefined
       } else if (intent === 'ask' && !sel) {
@@ -525,7 +539,7 @@ export function useNova(o: Options) {
         }
       }
       const anchorId = currentId ?? problemId
-      if (intent !== 'plot' && intent !== 'check') lastTeaching.current = { pageId: p1.id, problemId, currentId }
+      if (intent !== 'plot' && intent !== 'check') lastTeaching.current = { pageId: p1.id, problemId, currentId, extra: extra?.exam ? { exam: extra.exam, anchorRect: extra.anchorRect, workRegionId: extra.workRegionId, historyKey: extra.historyKey } : undefined }
       if (!anchorId && !question.trim()) {
         setStatus({ state: 'notice', message: 'Write something first, or select a line, then ask.' })
         return
@@ -542,12 +556,13 @@ export function useNova(o: Options) {
       for (const id of [problemId, currentId]) {
         if (!id) continue
         const r = page().readings[id]
-        if (!r || r.status === 'none') {
-          setStatus({ state: 'notice', message: 'NOVA could not find maths in that line. Rewrite it, or tap Edit under it to type it.', anchorRegionId: id })
+        if (!r || r.status === 'none' || !readingText(r)) {
+          // the selected answer is unreadable: ask about THAT answer (type it), never switch to another question
+          setStatus({ state: 'notice', message: 'NOVA could not read this answer. Type what you wrote so NOVA can help with it.', anchorRegionId: id, edit: id })
           return
         }
         if (r.state === 'needs_clarification') {
-          setStatus({ state: 'notice', message: 'Pick what you wrote from the choices under the line first.', anchorRegionId: id })
+          setStatus({ state: 'notice', message: 'Pick what you wrote from the choices under the line first.', anchorRegionId: id, edit: id })
           return
         }
         if (needsAccept && r.state !== 'accepted') {
@@ -564,8 +579,10 @@ export function useNova(o: Options) {
       const ctx: RequestContext = anchor
         ? makeContext(p, anchor, cr ?? pr)
         : { requestId: uuid(), pageId: p.id, contentRevision: p.contentRevision, regionId: 'page', sourceHash: `rev${p.contentRevision}`, selectionRevision: p.selectionRevision, interpretationRevision: 0 }
+      // a printed question's history is its own (keyed by its id): turns of other questions never leak in
+      const historyKey = extra?.historyKey ?? (extra?.exam?.id ? `q:${extra.exam.id}` : problemId)
       const history = p.history
-        .filter((t) => t.problemId === problemId)
+        .filter((t) => t.problemId === historyKey)
         .slice(-6)
         .map((t) => ({ role: t.role, text: t.text.slice(0, 600) }))
       const payload: TutorPayload = {
@@ -588,7 +605,9 @@ export function useNova(o: Options) {
       const interp = { p: pr?.interpretationRevision, c: cr?.interpretationRevision }
       if (extra?.anchorRect) anchorRects.current.set(ctx.requestId, extra.anchorRect)
       if (extra?.speak) speakReplies.current.add(ctx.requestId)
-      await send(payload, gen, interp, problemId, helpDeadline)
+      extras.current.set(ctx.requestId, { ...extra, historyKey })
+      trace(ctx.requestId, 'help-start', { intent, exam: extra?.exam?.number ?? null })
+      await send(payload, gen, interp, historyKey, helpDeadline)
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
@@ -635,8 +654,14 @@ export function useNova(o: Options) {
 
   const apply = (p: Page, payload: TutorPayload, res: TutorResult, problemId?: string) => {
     const ctx = payload.context
+    trace(ctx.requestId, 'help-reply', { ms: res.latencyMs, clarify: !!res.clarify })
+    const ex = extras.current.get(ctx.requestId)
+    extras.current.delete(ctx.requestId)
     if (res.clarify && !res.actions.length) {
-      setClarify({ ...res.clarify, intent: payload.intent as Intent, question0: payload.question })
+      const target = p.regions.find((r) => r.id === res.clarify!.regionId)
+      if (!target) return
+      trace(ctx.requestId, 'clarify', { kind: res.clarify.kind })
+      setClarifies((prev) => ({ ...prev, [target.id]: { ...res.clarify!, intent: payload.intent as Intent, question0: payload.question, sourceHash: target.sourceHash, exam: ex?.exam, anchorRect: ex?.anchorRect, workRegionId: ex?.workRegionId } }))
       opts.current.dispatch({ type: 'addTurns', pageId: p.id, turns: [{ role: 'student', text: payload.question || intentLabel(payload.intent), at: Date.now(), problemId }, { role: 'tutor', text: res.explanation, at: Date.now(), problemId }] })
       return
     }
@@ -747,6 +772,7 @@ export function useNova(o: Options) {
         if (problemId && payload.current) opts.current.dispatch({ type: 'recordStep', pageId: p.id, problemId, regionId: cur.id, text: checked.text, status: res.check.status })
       }
     }
+    trace(ctx.requestId, 'help-applied', { objects: objects.length })
     if (objects.length) opts.current.onBatchApplied(objects.length, ctx.requestId)
     // asked by voice → answered aloud (unless spoken replies are muted); "always speak" reads every reply.
     // The key is the reply's turn, so its chat bubble shows Play/Stop; a blocked or failed voice leaves the text and page.
@@ -768,7 +794,9 @@ export function useNova(o: Options) {
   /** The Solve button: a linear equation gets the explained solution (arrows, red moves, notes); anything else goes to the tutor. */
   /** One tap on Solve does everything: read the line if needed, graph a graph, otherwise write the worked answer. */
   const solveHere = useCallback(async (regionId: string) => {
-    setClarify(null)
+    const token = ++solveSeq.current
+    const current = () => token === solveSeq.current // a newer request (another line, another question) took over
+    dropClarify(regionId)
     setStatus({ state: 'working', anchorRegionId: regionId, message: 'Solving…' })
     let p = page()
     if (!readingText(p?.readings[regionId])) {
@@ -777,9 +805,11 @@ export function useNova(o: Options) {
       } catch (e) {
         // the read failed or timed out: say so and offer Retry / typing it — never start a second hidden wait
         const f = e instanceof ApiFailure ? e : new ApiFailure('READ_FAILED', 'NOVA could not read this line.', true)
+        if (!current()) return
         if (f.code === 'CANCELLED') return setStatus({ state: 'idle' })
         return setStatus({ state: 'error', message: f.message, retryable: true, retry: () => void solveHere(regionId), anchorRegionId: regionId, edit: regionId })
       }
+      if (!current()) return
       p = page()
     }
     const region = p?.regions.find((r) => r.id === regionId)
@@ -790,33 +820,34 @@ export function useNova(o: Options) {
       setStatus({ state: 'idle' })
       return void ask('plot', '', regionId)
     }
+    // calculus / limits go straight to the exact worked solution (the auto path would make a needless model call first)
+    const closedCalculus = /∫|d\s*\/\s*d|d[a-z]\s*\/\s*d[a-z]|\blim\b/i.test(text)
     try {
-      if (region && !region.typedId && (await react(regionId, region.sourceHash, true))) return setStatus({ state: 'idle' })
+      if (region && !region.typedId && !closedCalculus && (await react(regionId, region.sourceHash, true))) return current() && setStatus({ state: 'idle' })
     } catch {
       /* the exact path could not finish it: the solve request below shows its own result */
     }
+    if (!current()) return // never start this line's request after a newer one (it would cancel that one)
     setStatus({ state: 'idle' })
     await ask('solve', '', regionId)
   }, [react, ask])
 
   /** The student settled NOVA's notation question: their choice becomes the line's confirmed text (no OCR), then the
    *  action they asked for runs again. */
-  const resolveClarify = useCallback(async (text: string) => {
-    const c = clarifyRef.current
+  const resolveClarify = useCallback(async (regionId: string, text: string) => {
+    const c = clarifyRef.current[regionId]
     if (!c) return
-    setClarify(null)
+    dropClarify(regionId)
     const p = page(), region = p?.regions.find((r) => r.id === c.regionId)
-    if (!p || !region) return
+    if (!p || !region || region.sourceHash !== c.sourceHash) return // the line changed since NOVA asked: the question no longer applies
     if (region.typedId) {
       const b = p.typed?.find((x) => x.id === region.typedId)
       if (b) opts.current.dispatch({ type: 'editTyped', pageId: p.id, id: b.id, text, display: text, w: b.w })
     } else opts.current.dispatch({ type: 'acceptReading', pageId: p.id, regionId: c.regionId, text })
     await waitFor(() => readingText(page()?.readings[c.regionId]) === text)
-    if (c.intent === 'solve') await solveHere(c.regionId)
-    else await ask(c.intent, c.question0, c.regionId)
+    if (c.intent === 'solve' && !c.exam) await solveHere(c.regionId)
+    else await ask(c.intent, c.question0, c.exam ? null : c.regionId, c.exam ? { exam: c.exam, anchorRect: c.anchorRect, workRegionId: c.workRegionId ?? c.regionId } : undefined)
   }, [solveHere, ask])
-  const clarifyRef = useRef(clarify)
-  clarifyRef.current = clarify
 
   /** The student answered one of NOVA's own symbol questions: re-read locally with the answer. Resolved → the reading is
    *  shown for confirmation (not auto-accepted) and the cloud request is cancelled; still unsure → the next question. */
@@ -836,7 +867,7 @@ export function useNova(o: Options) {
     acceptLocal(p.id, regionId, lp.sourceHash, lr.result.literal, 'local-v3g + student', false)
   }, [])
 
-  return { phases, status, setStatus, ask, readNow, contentChanged, cancel, scheduler, solveHere, localPending, answerLocal, clarify, setClarify, resolveClarify }
+  return { phases, status, setStatus, ask, readNow, contentChanged, cancel, scheduler, solveHere, localPending, answerLocal, clarifies, dropClarify, resolveClarify }
 }
 
 export function intentLabel(intent: Intent): string {

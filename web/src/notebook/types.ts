@@ -194,6 +194,7 @@ export interface PaperTest {
   questions: PaperQuestion[]
   progress: { done: number; total: number }
   failedPages?: number[] // page indexes that could not be read yet
+  answerOwners?: Record<string, string> // regionId → questionId: which question a piece of work answers (recorded once)
   readPageIds?: string[] // pages whose questions NOVA has read (each page is read when the student opens it)
   error?: string
   createdAt: number

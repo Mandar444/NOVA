@@ -11,6 +11,7 @@ import { AskPanel } from '../ui/AskPopover'
 import { DictatePanel } from '../ui/DictatePanel'
 import { TypedLayer, TYPED_FONT, measureTyped } from './TypedLayer'
 import { prettyMath } from '../voice/spokenMath'
+import { questionById, questionForRegion, unattributed, workFor, type QuestionContext } from '../tutor/questionContext'
 import { TestPanel } from '../ui/TestPanel'
 import { StatusPill } from '../ui/StatusPill'
 import { AnswerFrames } from '../ui/AnswerFrames'
@@ -123,6 +124,12 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
   const pdfRef = useRef<HTMLInputElement>(null)
   const [testOpen, setTestOpen] = useState(false)
   const [currentQ, setCurrentQ] = useState<string | null>(null) // the question the student last opened
+  // a new piece of work on a paper page is attributed to its question ONCE (by where it was written); afterwards the
+  // recorded owner is used, so scrolling, edits and moves never change which question it answers
+  useEffect(() => {
+    const owners = unattributed(state.doc, page)
+    if (owners.length) dispatch({ type: 'ownAnswers', owners })
+  }, [page.regions, state.doc.tests]) // eslint-disable-line react-hooks/exhaustive-deps
   const [sideTab, setSideTab] = useState<'test' | 'ask'>('test') // laptop/tablet: one side area, Test and Ask as tabs
   const [hwOpen, setHwOpen] = useState(false)
   const [practiceOpen, setPracticeOpen] = useState<{ example: string | null } | null>(null)
@@ -362,14 +369,35 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
   }
 
   /** From the region menu: act on the selected line. */
-  const runIntent = (intent: Intent, question: string) => {
-    void nova.ask(intent, question, selected)
+  const runIntent = (intent: Intent, question: string) => helpFor(selected, intent, question)
+
+  /** The question a selected piece of work belongs to (a printed question on an imported paper), if any. */
+  const questionOf = (regionId: string | null): QuestionContext | null => questionForRegion(state.doc, page, regionId)
+  const examExtra = (qc: QuestionContext, work?: string | null) => ({
+    exam: qc.exam, anchorRect: qc.question.bounds, historyKey: qc.historyKey,
+    workRegionId: work ?? workFor(page, qc).at(-1)?.id,
+  })
+
+  /** Hint / Next step / Explain / Full solution on a selected line. On a paper, the selected answer's OWN question is used
+   *  (explicit selection beats position or "the latest line"); its question text, its answer and its history only. */
+  const helpFor = (regionId: string | null, intent: Intent | 'solve', question = '') => {
+    if (!regionId) return
+    const qc = questionOf(regionId)
+    if (qc) {
+      setCurrentQ(qc.question.id)
+      const q = intent === 'solve' ? 'Show me the full worked solution.' : intent === 'explain' && !question ? 'Explain why.' : question
+      return void nova.ask(intent === 'solve' ? 'ask' : intent, q, null, examExtra(qc, regionId))
+    }
+    if (intent === 'solve') return void nova.solveHere(regionId)
+    void nova.ask(intent, intent === 'explain' && !question ? 'Explain why.' : question, regionId)
   }
 
   /** From the Ask panel: the conversation continues; it is about askAbout (or the whole page). */
   const askFromPanel = (intent: Intent, question: string, o?: { voice?: boolean }) => {
     // asked by voice → NOVA answers out loud too (typed questions stay silent unless "always speak" is on)
     const about = askAbout && page.regions.some((r) => r.id === askAbout) ? askAbout : null
+    const qc = about ? questionOf(about) : null
+    if (qc) return void nova.ask(intent, question, null, { ...(o?.voice ? { speak: true } : {}), ...examExtra(qc, about) })
     const exam = about ? undefined : paperQuestionInFocus()
     void nova.ask(intent, question, about, { ...(o?.voice ? { speak: true } : {}), ...(exam ?? {}) })
   }
@@ -379,16 +407,15 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
     const t = activeTestFor(state, pageId)
     const qs = (t?.questions ?? []).filter((q) => q.pageId === pageId)
     if (!t || !qs.length) return undefined
+    // the question the student opened (Test panel / last helped) comes first; then the question under the latest work
+    let q = currentQ ? qs.find((x) => x.id === currentQ) : undefined
     const latest = [...page.regions].sort((a, b) => b.createdAt - a.createdAt)[0]
-    let q = latest ? qs.find((x) => answerRegions(page, t, x).some((r) => r.id === latest.id)) : undefined
+    q ??= latest ? qs.find((x) => questionOf(latest.id)?.question.id === x.id) : undefined
     const top = -view.ty / view.scale
     q ??= qs.filter((x) => x.bounds.y + x.bounds.h >= top).sort((a, b) => a.bounds.y - b.bounds.y)[0] ?? qs[0]
     const work = answerRegions(page, t, q)
-    return {
-      exam: { number: q.number, text: q.text, answer: q.answer, reveal: t.status === 'finished' },
-      anchorRect: q.bounds,
-      workRegionId: work[work.length - 1]?.id,
-    }
+    const qc = questionById(state.doc, q.id)
+    return qc ? examExtra(qc) : { exam: { id: q.id, number: q.number, text: q.text, answer: q.answer, reveal: t.status === 'finished' }, anchorRect: q.bounds, workRegionId: work[work.length - 1]?.id }
   }
 
   const regionAction = (a: RegionMenuAction) => {
@@ -419,7 +446,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
       if (tb) dispatch({ type: 'deleteTyped', pageId, id: tb })
       return setSelected(null)
     }
-    if (a === 'solve') void nova.solveHere(selected)
+    if (a === 'solve') helpFor(selected, 'solve')
     else runIntent(a, '')
     setSelected(null) // the menu must not sit over the answer NOVA is about to place
   }
@@ -685,7 +712,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
         initialText={ask.text}
         turns={page.history}
         status={nova.status}
-        about={askAbout ? readingText(page.readings[askAbout]) ?? 'the selected line' : null}
+        about={askAbout ? (questionOf(askAbout) ? `Question ${questionOf(askAbout)!.question.number} — your answer: ${readingText(page.readings[askAbout]) ?? '(not read yet)'}` : readingText(page.readings[askAbout]) ?? 'the selected line') : null}
         onClearAbout={() => setAskAbout(null)}
         onSend={askFromPanel}
         onClose={() => setAsk(null)}
@@ -924,6 +951,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
                 showAccepted={settings.showReadback !== false}
                 onAccept={(id, text) => dispatch({ type: 'acceptReading', pageId, regionId: id, text })}
                 onRetry={(id) => void nova.readNow(id).catch((e) => toast((e as Error).message))}
+                onTypeIt={(id) => setTypeFor({ regionId: id, text: readingText(page.readings[id]) ?? '' })}
                 localPending={nova.localPending}
                 onLocalAnswer={(id, q, o) => void nova.answerLocal(id, q, o)}
                 onStop={nova.cancel}
@@ -932,40 +960,39 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
                   if (intent === 'ask') {
                     setAskAbout(id)
                     setAsk({ mic: false, key: Date.now() })
-                  } else if (intent === 'solve') void nova.solveHere(id)
-                  else void nova.ask(intent, '', id)
+                  } else helpFor(id, intent)
                 }}
               />
               {selected && !ask && <RegionMenu page={page} view={view} regionId={selected} viewport={size} onAction={regionAction} />}
-              {(() => {
-                const c = nova.clarify
-                const recoverId = c?.regionId ?? typeFor?.regionId ?? nova.status.edit
-                const r = recoverId ? page.regions.find((x) => x.id === recoverId) : undefined
+              {[...new Set([...Object.keys(nova.clarifies), ...(typeFor ? [typeFor.regionId] : []), ...(nova.status.edit ? [nova.status.edit] : [])])].map((recoverId) => {
+                const c = nova.clarifies[recoverId]
+                const r = page.regions.find((x) => x.id === recoverId)
                 if (!r) return null
                 const left = Math.max(8, Math.min(size.w - 340, view.tx + r.bounds.x * view.scale))
                 const top = Math.max(8, view.ty + (r.bounds.y + r.bounds.h) * view.scale + 10)
                 const submit = (t: string) => {
                   const text = t.trim()
                   if (!text) return
-                  setTypeFor(null)
-                  if (c) return void nova.resolveClarify(text)
+                  if (typeFor?.regionId === r.id) setTypeFor(null)
+                  if (c) return void nova.resolveClarify(r.id, text)
                   // a typed correction is the confirmed reading: no OCR
                   if (r.typedId) dispatch({ type: 'editTyped', pageId, id: r.typedId, text, display: prettyMath(text), ...measureTyped(text) })
                   else dispatch({ type: 'acceptReading', pageId, regionId: r.id, text })
-                  nova.setStatus({ state: 'idle' })
+                  if (nova.status.edit === r.id) nova.setStatus({ state: 'idle' })
                 }
+                const qc = questionOf(r.id)
                 return (
-                  <div className="clarify-card" data-testid="clarify-card" role="dialog" aria-label="NOVA needs one detail" style={{ left, top }} onPointerDown={(e) => e.stopPropagation()}>
-                    <div className="cc-q">{c ? c.question : nova.status.edit && !typeFor ? 'Type the expression so NOVA can continue (your ink stays).' : 'Type what this line says:'}</div>
+                  <div key={r.id} className="clarify-card" data-testid="clarify-card" data-region={r.id} role="dialog" aria-label="NOVA needs one detail" style={{ left, top }} onPointerDown={(e) => e.stopPropagation()}>
+                    <div className="cc-q">{qc ? `Question ${qc.question.number}: ` : ''}{c ? c.question : nova.status.edit === r.id && typeFor?.regionId !== r.id ? 'Type the expression so NOVA can continue (your ink stays).' : 'Type what this line says:'}</div>
                     {c && c.options.map((o) => <button key={o.text} className="vb-btn" data-testid="clarify-option" onClick={() => submit(o.text)}>{o.label}</button>)}
                     <form className="cc-edit" onSubmit={(e) => { e.preventDefault(); submit(new FormData(e.currentTarget).get('t') as string) }}>
-                      <input name="t" data-testid="clarify-input" defaultValue={typeFor?.text ?? (c ? '' : readingText(page.readings[r.id]) ?? '')} placeholder={c ? 'or type it differently' : 'e.g. ∫_0^1 x^2 dx'} aria-label="Type the expression" />
+                      <input name="t" data-testid="clarify-input" defaultValue={typeFor?.regionId === r.id ? typeFor.text : c ? '' : readingText(page.readings[r.id]) ?? ''} placeholder={c ? 'or type it differently' : 'e.g. ∫_0^1 x^2 dx'} aria-label="Type the expression" />
                       <button className="vb-btn" type="submit">Use this</button>
-                      <button className="link" type="button" onClick={() => { setTypeFor(null); nova.setClarify(null); if (nova.status.edit) nova.setStatus({ state: 'idle' }) }}>Cancel</button>
+                      <button className="link" type="button" onClick={() => { if (typeFor?.regionId === r.id) setTypeFor(null); nova.dropClarify(r.id); if (nova.status.edit === r.id) nova.setStatus({ state: 'idle' }) }}>Cancel</button>
                     </form>
                   </div>
                 )
-              })()}
+              })}
             </>
           }
         />
@@ -1025,7 +1052,8 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
             {menu === 'dock' && (
               <div className="popover menu dock-pop" onPointerDown={(e) => e.stopPropagation()}>
                 <div className="row gap">
-                  {toolButton('select', 'Select', <Icon.select />)}
+                  {/* picking a tool closes this menu, so the next tap lands on the page (not on the menu) */}
+                  <span onClickCapture={() => setTimeout(() => setMenu(null))}>{toolButton('select', 'Select', <Icon.select />)}</span>
                   <button className="ob-tool" aria-label="Redo" disabled={!canRedo} onClick={() => dispatch({ type: 'redo', pageId })}><Icon.redo /></button>
                   <button className="ob-tool" aria-label="Fit width" onClick={() => { fitWidth(); setMenu(null) }}><Icon.fit /></button>
                   <button className="ob-tool" aria-label="Ask by voice" onClick={() => { openAsk(true); setMenu(null) }}><Icon.mic /></button>

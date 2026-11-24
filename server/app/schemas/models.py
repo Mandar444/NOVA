@@ -125,6 +125,7 @@ class Reading(Strict):
 
 
 class ExamQuestion(Strict):
+    id: Annotated[str, Field(max_length=64)] | None = None  # stable question identity (numbers repeat across pages)
     number: Annotated[str, Field(max_length=20)]
     text: Annotated[str, Field(max_length=1500)]
     answer: Annotated[str, Field(max_length=200)]

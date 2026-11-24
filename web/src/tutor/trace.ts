@@ -4,7 +4,7 @@
 
 export type TraceStage =
   | 'pen-up' | 'queued' | 'cooldown' | 'read-start' | 'img' | 'rec-end' | 'rec-fail' | 'stale-drop'
-  | 'auto-start' | 'auto-end' | 'auto-fail' | 'ink' | 'aborted' | 'deadline' | 'local' | 'local-fail' | 'cross-check'
+  | 'auto-start' | 'auto-end' | 'auto-fail' | 'ink' | 'aborted' | 'deadline' | 'local' | 'local-fail' | 'cross-check' | 'help-start' | 'help-reply' | 'help-applied' | 'clarify'
 
 export function trace(key: string, stage: TraceStage, extra: Record<string, unknown> = {}) {
   try {
