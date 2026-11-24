@@ -76,23 +76,41 @@ export function AskPanel({ docked, startWithMic, initialText, turns, status, abo
   // the question just sent: shown at once; if the request fails, it goes back into the box (never lost)
   const [sent, setSent] = useState<{ text: string; turns: number; restored: boolean } | null>(null)
   const sending = useRef(false)
+  const alive = useRef(true)
+  useEffect(() => () => { alive.current = false }, [])
+  // reads the LIVE session (never a value captured by an older render), so a send after an await sees the truth
   const send = (intent: Intent, q: string, spokenOverride?: boolean) => {
-    if (listening || sending.current) return // never sent while words are still arriving; never twice
+    const live = session.get()
+    if (live.status === 'listening' || live.status === 'transcribing' || sending.current) return // words still arriving / already sending
     sending.current = true
-    const own = q.trim() === voice.draft.trim()
-    const spoken = spokenOverride ?? (own && voice.spoken)
+    const own = q.trim() === live.draft.trim()
+    const spoken = spokenOverride ?? (own && live.spoken)
     stopSpeaking()
     if (own) session.consume()
     if (q.trim()) setSent({ text: q.trim(), turns: turns.length, restored: false })
     onSend(intent, q, { voice: spoken })
     setTimeout(() => (sending.current = false), 400)
   }
-  /** Done & Ask: finish the capture, wait for the final words (bounded), then send exactly once. */
+  /** Done & Ask: finish the capture, wait (bounded) for the final words, then send exactly once.
+   *  An operation token makes a second click, Cancel, a new capture or closing the panel void this send. */
+  const doneOp = useRef<{ token: number; capture: number } | null>(null)
+  const opSeq = useRef(0)
+  const [finishing, setFinishing] = useState(false)
   const doneAndAsk = async () => {
-    const spoken = true
-    const final = await session.finishAndWait(15_000)
-    if (final) send('ask', final, spoken)
+    if (doneOp.current) return // already finishing: a second click does nothing
+    const op = { token: ++opSeq.current, capture: session.captureId }
+    doneOp.current = op
+    setFinishing(true)
+    try {
+      const final = await session.finishAndWait(15_000)
+      const still = alive.current && doneOp.current === op && session.captureId === op.capture
+      if (still && final && final === session.get().draft.trim()) send('ask', final, true) // voice provenance kept
+    } finally {
+      if (doneOp.current === op) doneOp.current = null
+      if (alive.current) setFinishing(false)
+    }
   }
+  useEffect(() => () => { doneOp.current = null }, []) // closing the panel voids a pending Done & Ask
   useEffect(() => {
     if (!sent) return
     if (turns.length > sent.turns) return setSent(null) // the reply (and the question) are in the thread now
@@ -197,7 +215,7 @@ export function AskPanel({ docked, startWithMic, initialText, turns, status, abo
         />
         <button className="icon-btn send" aria-label="Send" disabled={!text.trim() || listening} onClick={() => send('ask', text.trim())}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg></button>
       </div>
-      {voice.status === 'listening' && <div className="voice-done"><button className="vb-btn strong" data-testid="voice-done-ask" onClick={() => void doneAndAsk()}>✓ Done &amp; Ask</button><span className="voice-note">or Stop to review first</span></div>}
+      {(voice.status === 'listening' || finishing) && <div className="voice-done"><button className="vb-btn strong" data-testid="voice-done-ask" disabled={finishing} onClick={() => void doneAndAsk()}>{finishing ? 'Finishing…' : '✓ Done & Ask'}</button><span className="voice-note">{finishing ? 'sending when the last words are in' : 'or Stop to review first'}</span></div>}
       <VoiceControls state={voice} session={session} sendHint="then press Send — nothing is sent by itself" />
     </aside>
   )

@@ -191,10 +191,15 @@ export class VoiceSession {
     void this.engine.start()
   }
 
+  private inflight = new Map<AbortController, { blob: Blob; capture: number; index: number }>()
+  /** Which capture is current: changes on start, cancel, retry and expiry (a caller holding an older one must stop). */
+  get captureId() { return this.capture }
+
   private async transcribe(blob: Blob, cap: number, index: number) {
     this.set({ pending: this.state.pending + 1 })
     const ctl = new AbortController()
     this.aborts.add(ctl)
+    this.inflight.set(ctl, { blob, capture: cap, index })
     try {
       const res = await api.transcribe(uuid(), blob, ctl.signal)
       if (cap !== this.capture) return
@@ -209,6 +214,7 @@ export class VoiceSession {
       if (e instanceof ApiFailure && e.code === 'FEATURE_UNAVAILABLE') void serverSpeech(true)
     } finally {
       this.aborts.delete(ctl)
+      this.inflight.delete(ctl)
       if (cap === this.capture) {
         // append in the order the words were spoken, even if transcriptions finish out of order
         let d = this.state.draft
@@ -258,16 +264,38 @@ export class VoiceSession {
   /** Done: finish capturing and wait (bounded) for the last words to be transcribed. Resolves with the final draft,
    *  or null if transcription did not finish in time / failed (the draft and kept audio stay for Retry or editing). */
   async finishAndWait(ms = 15_000): Promise<string | null> {
+    const cap = this.capture
     if (this.state.status === 'listening') this.stop()
     const end = Date.now() + ms
     while (Date.now() < end) {
+      if (this.capture !== cap) return null // cancelled, restarted or retried meanwhile: this wait is over
       const st = this.state.status
       if (st === 'ready' || st === 'paused' || st === 'idle') return this.state.draft.trim() || null
       if (st === 'error') return null
       await new Promise((r) => setTimeout(r, 100))
     }
-    this.set({ error: `The last part is still being transcribed after ${Math.round(ms / 1000)} s. Your words are kept — press Send when it appears, or edit the text.` })
+    if (this.capture === cap) this.expire(ms)
     return null
+  }
+
+  /** Transcription took too long: unlock the box with the words already transcribed. The unfinished parts are stopped
+   *  and their audio kept for an explicit Retry — a late result can never land on top of the student's edits. */
+  private expire(ms: number) {
+    this.capture++ // isolates the expired operation: anything still arriving for it is ignored
+    for (const [ctl, it] of this.inflight) {
+      this.failedAudio.push(it)
+      ctl.abort()
+    }
+    this.inflight.clear()
+    this.aborts.clear()
+    this.engine?.cancel()
+    this.engine = null
+    setMicBusy(false)
+    this.ready.clear()
+    this.set({
+      status: 'error', pending: 0, interim: '', level: 0, startedAt: null, failed: this.failedAudio.length,
+      error: `The last part was still being transcribed after ${Math.round(ms / 1000)} s. The words so far are kept and editable — send them, or press Retry transcription for the rest.`,
+    })
   }
 
   /** Cancel: discard only what this capture added; the earlier draft (and the student's edits) stay. */

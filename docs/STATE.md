@@ -228,3 +228,19 @@ Secrets: `server/.env`. Speech model: `server/models/` (`scripts/setup_speech.py
 - Dictated blocks: KaTeX, measured size, inserted in clear space in view; drag handle (zoom-correct, one undoable move, Esc cancels, anchored answers follow, no re-reading); identity = text only.
 - Ask by voice: "Done & Ask" (finish, bounded wait, send once); sent question shown at once; failed send restores the draft.
 - Verified: server 266, web 81 tests; live API checks with real BharatCode (see handoff). NOT verified: browser journeys (Playwright run not executed), real microphone/speaker, Brave by hand.
+
+## Voice submission fixes + real-browser results (2026-11-24, branch voice-dictation; local only, ready for Antigravity QA)
+- Done & Ask: submits through the LIVE session state (not a stale render value) with an operation token → exactly one send; a second click, Cancel, a new capture or closing the panel voids it. Voice provenance + final transcript kept.
+- Transcription timeout (15 s): the expired operation is isolated (in-flight requests aborted, their audio kept for "Retry transcription"); box unlocks with the words so far; nothing auto-sent; late results ignored (never overwrite edits).
+- Fixed: dictated blocks rendered as "int02 x2" — TeX backslashes were lost (shell escaping); the unit test now checks real KaTeX output.
+- Tests: web 87 (incl. 6 component tests on the real Done & Ask button — 3 fail on the previous component), server 266.
+- Real browser (Brave 1.x, headed, Windows; SYNTHETIC speech from Windows SAPI as the fake microphone; real faster-whisper; real BharatCode):
+  - dictation with a 4 s pause: all words kept ("integral of x squared from 0 to 2"), preview ∫₀² x² dx, inserted once, not solved; undo/redo/reload/page switch OK
+  - Done & Ask (+ double click): one tutor request; reply 7.4 s; spoken reply started (4 voices), Replay/Stop worked
+  - transcription failure (503 injected): words kept, Retry transcription → text; pause/resume/cancel/close/reload keep the draft
+  - menu Full solution on the dictated integral: [x³/3]₀² = 8/3 on the page in 0.57 s; Explain wrote working (13.3 s); follow-up stayed on ∫ (15 s)
+- Handwriting timings (Brave, last pen-up →):
+  - arithmetic "3 + 2 = 6" (local reader): reading ≈ 2.1 s (≈2 s is the pause debounce; model ≈ 50–180 ms), mark visible 2.19 s
+  - advanced "sin(x+1)=" (local reader unsure → cloud): local 2.19 s, crop 2.33 s, cloud reading 20.4 s, of which the BharatCode call itself was 17.9 s (server total 18.1 s) — the time is in the provider's vision call, not NOVA; no answer was written within 40 s
+- NOT verified: real microphone/speakers (only synthetic audio + the browser's speech engine); mic-permission denial in a real browser (Brave shows a prompt in headed mode — covered by unit tests only); "dy/dx sin x²" by hand (the QA glyph font has no "d").
+- Limitation: follow-up replies may mention other lines on the page (page context is sent); the advanced-handwriting latency depends on BharatCode.

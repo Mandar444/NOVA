@@ -60,9 +60,14 @@ describe('spoken maths', () => {
 import katex from 'katex'
 import { canonToTex } from './spokenMath'
 describe('typesetting dictated maths', () => {
-  it('turns canonical text into valid TeX', () => {
-    expect(canonToTex('∫_0^2 x^2 dx')).toBe('\int_{0}^{2} x^{2} \,dx')
-    for (const t of ['∫_0^2 x^2 dx', 'x^2 + 3x - 4 = 0', 'd/dx(sin x)', '∫_0^1 x^2/100 dx', 'lim x->10 (3x + 4x - 6x sin θ)', 'dy/dx = sin(x^2)', 'Solve 2(x + 3) = 14'])
-      expect(() => katex.renderToString(canonToTex(t), { throwOnError: true })).not.toThrow()
+  it('turns canonical text into valid TeX that renders as maths, not letters', () => {
+    expect(canonToTex('∫_0^2 x^2 dx')).toBe(String.raw`\int_{0}^{2} x^{2} \,dx`)
+    expect(canonToTex('d/dx(sin x)')).toBe(String.raw`\frac{d}{dx}\left(\sin x\right)`)
+    for (const t of ['∫_0^2 x^2 dx', 'x^2 + 3x - 4 = 0', 'd/dx(sin x)', '∫_0^1 x^2/100 dx', 'lim x->10 (3x + 4x - 6x sin θ)', 'dy/dx = sin(x^2)', 'Solve 2(x + 3) = 14']) {
+      const html = katex.renderToString(canonToTex(t), { throwOnError: true })
+      expect(html).not.toMatch(/>int<|>frac<|katex-error/) // a lost backslash shows up as literal letters
+    }
+    const integral = katex.renderToString(canonToTex('∫_0^2 x^2 dx'), { throwOnError: true })
+    expect(integral).toMatch(/∫/) // the integral sign itself
   })
 })
