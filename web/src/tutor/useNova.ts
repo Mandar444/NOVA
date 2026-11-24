@@ -8,7 +8,7 @@ import { uuid } from '../notebook/ids'
 import type { Page, Reading, Rect, Region, TutorAction, TutorObject, Turn } from '../notebook/types'
 import { renderRegion } from '../recognition/render'
 import { inflate, intersects, strokeBounds, union } from '../notebook/geometry'
-import { RecognitionScheduler, type ReadPhase } from '../recognition/scheduler'
+import { BudgetError, RecognitionScheduler, type HelpBudget, type ReadPhase } from '../recognition/scheduler'
 import { speak, stopSpeaking, voiceRepliesOn } from '../voice/speech'
 import { trace } from './trace'
 import { readLocally, localReaderEnabled, warmLocalReader, engineText, type LocalResult, type LocalAnswers } from '../recognition/localReader'
@@ -31,12 +31,14 @@ export interface TutorStatus {
   retry?: () => void
   retryable?: boolean
   edit?: string // region whose text the student can type instead (recovery when reading fails)
+  alt?: { label: string; run: () => void } // a different, permitted kind of help (e.g. explain the printed question)
+  question?: string // which question this is about ("Question 3"), shown with the recovery
 }
 
 /** A clarification NOVA is waiting for, with the action to run again once the student has chosen. Keyed by the line it
  *  is about and the content it was asked for: a late reply never replaces another question's card. */
 export interface PendingClarify extends Clarification { intent: Intent; question0: string; sourceHash: string; exam?: AskExtra['exam']; anchorRect?: Rect; workRegionId?: string }
-export interface AskExtra { exam?: NonNullable<TutorPayload['exam']>; anchorRect?: Rect; speak?: boolean; workRegionId?: string; historyKey?: string }
+export interface AskExtra { exam?: NonNullable<TutorPayload['exam']>; anchorRect?: Rect; speak?: boolean; workRegionId?: string; historyKey?: string; budget?: HelpBudget }
 
 interface Options {
   stateRef: RefObject<DocState>
@@ -136,6 +138,14 @@ export function useNova(o: Options) {
   clarifyRef.current = clarifies
   const dropClarify = (regionId?: string) => setClarifies((prev) => { if (!regionId) return {}; if (!prev[regionId]) return prev; const n = { ...prev }; delete n[regionId]; return n })
   const solveSeq = useRef(0) // one Full-solution flow at a time: a newer request makes an older one stop before it asks
+  const helpCtl = useRef<AbortController | null>(null) // the help request in progress: Stop / a newer request aborts it
+  /** One budget per help request: an absolute deadline and a cancellation signal for every stage. */
+  const newBudget = (): HelpBudget => {
+    helpCtl.current?.abort()
+    const c = new AbortController()
+    helpCtl.current = c
+    return { deadline: Date.now() + TEACHING_DEADLINE_MS, signal: c.signal }
+  }
   const extras = useRef(new Map<string, AskExtra>()) // requestId → the question context it was asked with
   const lastTeaching = useRef<{ pageId: string; problemId?: string; currentId?: string; extra?: AskExtra } | null>(null) // follow-ups stay on this
   const speakReplies = useRef(new Set<string>()) // requests asked by voice: answer out loud
@@ -160,7 +170,7 @@ export function useNova(o: Options) {
     if (automatic) void react(regionId, sourceHash)
   }
 
-  const readRegion = useCallback(async (regionId: string, changedAt: number = Date.now()) => {
+  const readRegion = useCallback(async (regionId: string, changedAt: number = Date.now(), budget?: HelpBudget) => {
     const p = page()
     const region = p?.regions.find((r) => r.id === regionId)
     if (!p || !region) return
@@ -203,8 +213,13 @@ export function useNova(o: Options) {
     readAbort.current.add(ctl)
     readCtl.current.get(regionId)?.abort()
     readCtl.current.set(regionId, ctl)
-    // one budget for the whole attempt, counted from the last change to the line (pause and queue included)
-    const deadline = changedAt + INTERACTIVE_DEADLINE_MS
+    // one budget for the whole attempt, counted from the last change to the line (pause and queue included);
+    // a help request's own deadline is never exceeded either, and its Stop cancels this read
+    const deadline = Math.min(changedAt + INTERACTIVE_DEADLINE_MS, budget?.deadline ?? Infinity)
+    if (budget) {
+      if (budget.signal.aborted) throw new ApiFailure('CANCELLED', 'Stopped.', false)
+      budget.signal.addEventListener('abort', () => ctl.abort(new DOMException('Stopped', 'AbortError')), { once: true })
+    }
     lineDeadline.current.set(`${regionId}:${region.sourceHash}`, deadline)
     const left = deadline - Date.now()
     // a deadline is a time-out, not evidence that the provider is busy (a real "busy" reply carries its own message)
@@ -386,7 +401,7 @@ export function useNova(o: Options) {
   const scheduler = useMemo(
     () =>
       new RecognitionScheduler({
-        run: (id, _auto, changedAt) => readRegion(id, changedAt),
+        run: (id, _auto, changedAt, budget) => readRegion(id, changedAt, budget),
         cancel: (id) => readCtl.current.get(id)?.abort(new DOMException('replaced', 'AbortError')),
         isFresh: (id) => {
           const pg = page()
@@ -437,10 +452,12 @@ export function useNova(o: Options) {
   )
 
   const readNow = useCallback(
-    async (regionId: string) => {
+    async (regionId: string, budget?: HelpBudget) => {
       try {
-        await scheduler.readNow(regionId)
+        await scheduler.readNow(regionId, budget)
       } catch (e) {
+        if (e instanceof BudgetError) throw new ApiFailure(e.code, e.code === 'TIMEOUT' ? `NOVA couldn't read this answer within the ${Math.round(TEACHING_DEADLINE_MS / 1000)} s help limit. Your ink is safe.` : 'Stopped.', e.code === 'TIMEOUT')
+        if (budget && e instanceof ApiFailure && e.code === 'CANCELLED') throw e // a stopped help request stops here
         if (!(e instanceof ApiFailure && e.code === 'CANCELLED')) throw e
       }
     },
@@ -448,18 +465,19 @@ export function useNova(o: Options) {
   )
 
   /** Ensure a fresh reading exists for a region (explicit flush). */
-  const ensureReading = async (regionId: string) => {
+  const ensureReading = async (regionId: string, budget?: HelpBudget) => {
     const p = page()
     const region = p.regions.find((r) => r.id === regionId)
     if (!region) return undefined
     const r = p.readings[regionId]
     if (r && r.sourceHash === region.sourceHash) return r
-    await readNow(regionId)
-    // let the dispatched reading reach state before anyone decides based on it
+    await readNow(regionId, budget)
+    // let the dispatched reading reach state before anyone decides based on it (bounded by the help budget too)
+    const left = budget ? Math.max(0, Math.min(1500, budget.deadline - Date.now())) : 1500
     await waitFor(() => {
       const cur = page().regions.find((x) => x.id === regionId)
       return !cur || page().readings[regionId]?.sourceHash === cur.sourceHash
-    })
+    }, left)
     return page().readings[regionId]
   }
 
@@ -478,19 +496,31 @@ export function useNova(o: Options) {
       const gen = ++tutorGen.current
       solveSeq.current++ // any newer help request supersedes a Full-solution flow still preparing
       tutorAbort.current?.abort()
+      // the clock started when the student pressed the button (a Full-solution flow passes its budget on)
+      const budget = extra?.budget && !extra.budget.signal.aborted && helpCtl.current?.signal === extra.budget.signal ? extra.budget : newBudget()
+      const helpDeadline = budget.deadline
       if (selectedRegionId) dropClarify(selectedRegionId)
-      const helpDeadline = Date.now() + TEACHING_DEADLINE_MS // shared by the reading step and the teaching call
       stopSpeaking()
       const p0 = page()
       const sel = selectedRegionId && p0.regions.some((r) => r.id === selectedRegionId) ? selectedRegionId : null
       setStatus({ state: 'working', anchorRegionId: sel ?? p0.problemRegionId, message: 'Reading your work…' })
+      // Retry repeats exactly this request: same question, same student work, same teaching mode (a fresh budget)
+      const again = () => void ask(intent, question, selectedRegionId, extra0 ? { ...extra0, budget: undefined } : undefined)
       const fail = (e: unknown, anchorRegionId?: string) => {
         if (gen !== tutorGen.current) return
         const f = e instanceof ApiFailure ? e : new ApiFailure('READ_FAILED', 'Could not read the page.', true)
-        setStatus({ state: 'error', message: f.message, retryable: f.retryable, retry: () => void ask(intent, question, selectedRegionId), anchorRegionId })
+        if (f.code === 'CANCELLED') return setStatus({ state: 'idle' })
+        // the selected answer could not be read: keep the ink and the question; offer typing it, and (where the test
+        // rules allow) explaining the printed question instead of reviewing the unreadable answer
+        const ex = extra?.exam
+        const alt = ex && intent !== 'check' ? {
+          label: `Explain question ${ex.number} (not my answer)`,
+          run: () => void ask(ex.reveal ? 'explain' : 'hint', `Explain what question ${ex.number} is asking. Don't review my answer.`, null, { ...extra!, workRegionId: undefined, budget: undefined }),
+        } : undefined
+        setStatus({ state: 'error', message: f.message, retryable: f.retryable, retry: again, anchorRegionId, edit: anchorRegionId, alt, question: ex ? `Question ${ex.number}` : undefined })
       }
       try {
-        if (sel) await ensureReading(sel)
+        if (sel) await ensureReading(sel, budget)
       } catch (e) {
         return fail(e, sel ?? undefined)
       }
@@ -546,11 +576,13 @@ export function useNova(o: Options) {
       }
       setStatus({ state: 'working', anchorRegionId: anchorId, message: 'Reading your work…' })
       try {
-        if (problemId) await ensureReading(problemId)
-        if (currentId) await ensureReading(currentId)
+        if (problemId) await ensureReading(problemId, budget)
+        if (currentId) await ensureReading(currentId, budget)
       } catch (e) {
         return fail(e, anchorId)
       }
+      if (budget.signal.aborted) return // Stop: no request may start after cancellation
+      if (budget.deadline <= Date.now()) return fail(new ApiFailure('TIMEOUT', `NOVA couldn't finish within the ${Math.round(TEACHING_DEADLINE_MS / 1000)} s help limit. Your ink is safe.`, true), anchorId)
       if (gen !== tutorGen.current) return
       const needsAccept = intent === 'check' || intent === 'complete' || intent === 'plot' || intent === 'solve'
       for (const id of [problemId, currentId]) {
@@ -558,7 +590,9 @@ export function useNova(o: Options) {
         const r = page().readings[id]
         if (!r || r.status === 'none' || !readingText(r)) {
           // the selected answer is unreadable: ask about THAT answer (type it), never switch to another question
-          setStatus({ state: 'notice', message: 'NOVA could not read this answer. Type what you wrote so NOVA can help with it.', anchorRegionId: id, edit: id })
+          const ex = extra?.exam
+          setStatus({ state: 'notice', message: 'NOVA could not read this answer. Type what you wrote so NOVA can help with it.', anchorRegionId: id, edit: id, question: ex ? `Question ${ex.number}` : undefined,
+            alt: ex && intent !== 'check' ? { label: `Explain question ${ex.number} (not my answer)`, run: () => void ask(ex.reveal ? 'explain' : 'hint', `Explain what question ${ex.number} is asking. Don't review my answer.`, null, { ...extra!, workRegionId: undefined, budget: undefined }) } : undefined })
           return
         }
         if (r.state === 'needs_clarification') {
@@ -607,19 +641,26 @@ export function useNova(o: Options) {
       if (extra?.speak) speakReplies.current.add(ctx.requestId)
       extras.current.set(ctx.requestId, { ...extra, historyKey })
       trace(ctx.requestId, 'help-start', { intent, exam: extra?.exam?.number ?? null })
-      await send(payload, gen, interp, historyKey, helpDeadline)
+      await send(payload, gen, interp, historyKey, helpDeadline, budget.signal)
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   )
 
-  const send = async (payload: TutorPayload, gen: number, interp: { p?: number; c?: number }, problemId?: string, deadline: number = Date.now() + TEACHING_DEADLINE_MS) => {
+  const send = async (payload: TutorPayload, gen: number, interp: { p?: number; c?: number }, problemId?: string, deadline: number = Date.now() + TEACHING_DEADLINE_MS, stop?: AbortSignal) => {
+    if (stop?.aborted) return
     const ctl = new AbortController()
     tutorAbort.current = ctl
+    stop?.addEventListener('abort', () => ctl.abort(new DOMException('Stopped', 'AbortError')), { once: true })
     setStatus({ state: 'working', anchorRegionId: payload.context.regionId, message: 'NOVA is thinking…' })
     let res: TutorResult
     // ONE deadline for the whole help request (reading the line + teaching): the tutor gets only what is left
-    const budget = Math.max(3000, deadline - Date.now())
+    // what is left of the ONE help deadline — never extended (an expired request is not sent)
+    const budget = deadline - Date.now()
+    if (budget <= 0) {
+      setStatus({ state: 'error', message: `NOVA couldn't finish within the ${Math.round(TEACHING_DEADLINE_MS / 1000)} s help limit. Your work is safe — try again.`, retryable: true, anchorRegionId: payload.context.regionId })
+      return
+    }
     const timer = setTimeout(() => ctl.abort(new DOMException(`NOVA couldn't answer in ${Math.round(TEACHING_DEADLINE_MS / 1000)} s. Your work is safe — try again, or ask a shorter question.`, 'TimeoutError')), budget)
     try {
       res = await api.tutor(payload, ctl.signal, budget)
@@ -785,6 +826,8 @@ export function useNova(o: Options) {
 
   const cancel = useCallback(() => {
     tutorGen.current++
+    solveSeq.current++
+    helpCtl.current?.abort() // queued reads, joined reads and waits of the help request stop too
     tutorAbort.current?.abort()
     scheduler.cancelAll() // and any reading in flight: Stop ends every wait
     stopSpeaking()
@@ -794,6 +837,7 @@ export function useNova(o: Options) {
   /** The Solve button: a linear equation gets the explained solution (arrows, red moves, notes); anything else goes to the tutor. */
   /** One tap on Solve does everything: read the line if needed, graph a graph, otherwise write the worked answer. */
   const solveHere = useCallback(async (regionId: string) => {
+    const budget = newBudget() // the Full-solution clock starts now and is passed on to the request
     const token = ++solveSeq.current
     const current = () => token === solveSeq.current // a newer request (another line, another question) took over
     dropClarify(regionId)
@@ -801,7 +845,7 @@ export function useNova(o: Options) {
     let p = page()
     if (!readingText(p?.readings[regionId])) {
       try {
-        await ensureReading(regionId) // ONE bounded reading attempt
+        await ensureReading(regionId, budget) // ONE bounded reading attempt, inside the help budget
       } catch (e) {
         // the read failed or timed out: say so and offer Retry / typing it — never start a second hidden wait
         const f = e instanceof ApiFailure ? e : new ApiFailure('READ_FAILED', 'NOVA could not read this line.', true)
@@ -827,9 +871,9 @@ export function useNova(o: Options) {
     } catch {
       /* the exact path could not finish it: the solve request below shows its own result */
     }
-    if (!current()) return // never start this line's request after a newer one (it would cancel that one)
+    if (!current() || budget.signal.aborted) return // never start this line's request after a newer one or after Stop
     setStatus({ state: 'idle' })
-    await ask('solve', '', regionId)
+    await ask('solve', '', regionId, { budget })
   }, [react, ask])
 
   /** The student settled NOVA's notation question: their choice becomes the line's confirmed text (no OCR), then the

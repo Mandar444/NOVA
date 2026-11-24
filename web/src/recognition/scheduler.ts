@@ -5,12 +5,36 @@
 
 export type ReadPhase = 'dirty' | 'waiting_for_pause' | 'recognizing' | 'failed'
 
+/** One absolute deadline + one cancellation signal for a whole help request (Explain / Solve …): every stage uses what
+ *  is left of it — queueing, joining a read already running, recognition, waits — and none restarts the clock. */
+export interface HelpBudget { deadline: number; signal: AbortSignal }
+
+export class BudgetError extends Error {
+  code: 'TIMEOUT' | 'CANCELLED'
+  constructor(code: 'TIMEOUT' | 'CANCELLED', message: string) { super(message); this.code = code }
+}
+
+/** Resolve with `p`, or reject when the budget's deadline passes or it is cancelled — whichever comes first. */
+export function within<T>(p: Promise<T>, budget: HelpBudget | undefined, now: () => number = Date.now): Promise<T> {
+  if (!budget) return p
+  if (budget.signal.aborted) return Promise.reject(new BudgetError('CANCELLED', 'Stopped.'))
+  const left = budget.deadline - now()
+  if (left <= 0) return Promise.reject(new BudgetError('TIMEOUT', 'deadline'))
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => { cleanup(); reject(new BudgetError('TIMEOUT', 'deadline')) }, left)
+    const onAbort = () => { cleanup(); reject(new BudgetError('CANCELLED', 'Stopped.')) }
+    const cleanup = () => { clearTimeout(t); budget.signal.removeEventListener('abort', onAbort) }
+    budget.signal.addEventListener('abort', onAbort)
+    p.then((v) => { cleanup(); resolve(v) }, (e) => { cleanup(); reject(e) })
+  })
+}
+
 export interface SchedulerOptions {
   pauseMs?: number
   cooldownMs?: number
   sessionCap?: number
   maxInflight?: number
-  run: (regionId: string, auto: boolean, changedAt: number) => Promise<void>
+  run: (regionId: string, auto: boolean, changedAt: number, budget?: HelpBudget) => Promise<void>
   /** Cancel the in-flight read of this region (its content changed, or the student pressed Stop). */
   cancel?: (regionId: string) => void
   /** The region already has a reading of its current content: nothing to do. */
@@ -69,14 +93,17 @@ export class RecognitionScheduler {
     this.contentChanged(lastRegionId)
   }
 
-  /** Explicit Read now / Ask flush: bypasses pause, cooldown and the automatic cap. Its budget starts now. */
-  async readNow(regionId: string): Promise<void> {
+  /** Explicit Read now / help flush: bypasses pause, cooldown and the automatic cap. With a help budget, joining a read
+   *  already running and waiting for a free slot are both bounded by it, and the read itself gets only what is left. */
+  async readNow(regionId: string, budget?: HelpBudget): Promise<void> {
     if (this.timerRegion === regionId) this.clearTimer()
     if (this.pending === regionId) this.pending = null
     const running = this.inflight.get(regionId)
-    if (running) return running
-    while (this.inflight.size >= this.o.maxInflight) await Promise.race([...this.inflight.values()]).catch(() => undefined)
-    return this.start(regionId, false, this.o.now())
+    if (running) return within(running, budget, this.o.now)
+    while (this.inflight.size >= this.o.maxInflight) await within(Promise.race([...this.inflight.values()]).catch(() => undefined), budget, this.o.now)
+    if (budget?.signal.aborted) throw new BudgetError('CANCELLED', 'Stopped.')
+    if (budget && budget.deadline <= this.o.now()) throw new BudgetError('TIMEOUT', 'deadline')
+    return this.start(regionId, false, this.o.now(), budget)
   }
 
   isBusy() {
@@ -128,10 +155,10 @@ export class RecognitionScheduler {
     void this.start(regionId, true, this.changedAt.get(regionId) ?? this.o.now()).catch(() => undefined)
   }
 
-  private start(regionId: string, auto: boolean, changedAt: number): Promise<void> {
+  private start(regionId: string, auto: boolean, changedAt: number, budget?: HelpBudget): Promise<void> {
     this.o.onPhase(regionId, 'recognizing')
     const promise: Promise<void> = this.o
-      .run(regionId, auto, changedAt)
+      .run(regionId, auto, changedAt, budget)
       .then(() => this.o.onPhase(regionId, null))
       .catch((e: unknown) => {
         const code = (e as { code?: string })?.code

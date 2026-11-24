@@ -983,11 +983,13 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
                 const qc = questionOf(r.id)
                 return (
                   <div key={r.id} className="clarify-card" data-testid="clarify-card" data-region={r.id} role="dialog" aria-label="NOVA needs one detail" style={{ left, top }} onPointerDown={(e) => e.stopPropagation()}>
-                    <div className="cc-q">{qc ? `Question ${qc.question.number}: ` : ''}{c ? c.question : nova.status.edit === r.id && typeFor?.regionId !== r.id ? 'Type the expression so NOVA can continue (your ink stays).' : 'Type what this line says:'}</div>
+                    <div className="cc-q">{qc ? `Question ${qc.question.number}: ` : ''}{c ? c.question : nova.status.edit === r.id && typeFor?.regionId !== r.id ? `NOVA couldn't read ${qc ? 'your answer' : 'this line'}${nova.status.message ? ` (${nova.status.message.replace(/\.$/, '')})` : ''}. Type it, so NOVA can help with it (your ink stays).` : 'Type what this line says:'}</div>
                     {c && c.options.map((o) => <button key={o.text} className="vb-btn" data-testid="clarify-option" onClick={() => submit(o.text)}>{o.label}</button>)}
+                    {!c && nova.status.edit === r.id && nova.status.retry && <button className="vb-btn" data-testid="recover-retry" onClick={() => { const f = nova.status.retry!; nova.setStatus({ state: 'idle' }); f() }}>Retry reading</button>}
+                    {!c && nova.status.edit === r.id && nova.status.alt && <button className="vb-btn" data-testid="recover-explain-question" title="Explains the printed question; your unreadable answer is not reviewed" onClick={() => { const f = nova.status.alt!.run; nova.setStatus({ state: 'idle' }); f() }}>{nova.status.alt.label}</button>}
                     <form className="cc-edit" onSubmit={(e) => { e.preventDefault(); submit(new FormData(e.currentTarget).get('t') as string) }}>
                       <input name="t" data-testid="clarify-input" defaultValue={typeFor?.regionId === r.id ? typeFor.text : c ? '' : readingText(page.readings[r.id]) ?? ''} placeholder={c ? 'or type it differently' : 'e.g. ∫_0^1 x^2 dx'} aria-label="Type the expression" />
-                      <button className="vb-btn" type="submit">Use this</button>
+                      <button className="vb-btn" type="submit" data-testid="recover-type">{!c && qc ? 'Type my answer' : 'Use this'}</button>
                       <button className="link" type="button" onClick={() => { if (typeFor?.regionId === r.id) setTypeFor(null); nova.dropClarify(r.id); if (nova.status.edit === r.id) nova.setStatus({ state: 'idle' }) }}>Cancel</button>
                     </form>
                   </div>
