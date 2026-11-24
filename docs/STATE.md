@@ -244,3 +244,19 @@ Secrets: `server/.env`. Speech model: `server/models/` (`scripts/setup_speech.py
   - advanced "sin(x+1)=" (local reader unsure → cloud): local 2.19 s, crop 2.33 s, cloud reading 20.4 s, of which the BharatCode call itself was 17.9 s (server total 18.1 s) — the time is in the provider's vision call, not NOVA; no answer was written within 40 s
 - NOT verified: real microphone/speakers (only synthetic audio + the browser's speech engine); mic-permission denial in a real browser (Brave shows a prompt in headed mode — covered by unit tests only); "dy/dx sin x²" by hand (the QA glyph font has no "d").
 - Limitation: follow-up replies may mention other lines on the page (page context is sent); the advanced-handwriting latency depends on BharatCode.
+
+## Follow-up routing fix (2026-11-24, branch voice-dictation; local only)
+- Root cause: `FOLLOW_UP` in web/src/tutor/useNova.ts contained two literal U+0008 (backspace) characters instead of `\b` (shell-escaping damage), so "I still don't understand" never matched and went to the latest line. Rewritten from a file (backslashes preserved); straight and curly apostrophes accepted.
+- Anchored follow-ups now send only their own question/step as page context (other lines can't pull the reply elsewhere).
+- Second bug found by the browser regression: selecting a dictated question B still taught the page's first problem A (B, an equation, was treated as a step of A). A dictated question is now always its own problem when selected.
+- Escaping scan: no other control characters in web/src. PRE-EXISTING (before this branch, in perf-latency 9853a59): `_ASKED_TO_WRITE` in server/app/services.py also has two U+0008 instead of `\b`, so it never matches. NOT changed here — fixing it relaxes a hint safeguard (questions containing "add"/"list" would let NOVA write the student's next step); needs a deliberate decision.
+- Tests: web 90 (incl. real phrases, curly apostrophes, and a control-character scan of the edited files); server 266 unchanged.
+- Browser regression (real build, real BharatCode, synthetic nothing): Explain A (∫₀² x² dx, 12.2 s) → dictate B (x² + 3x − 4 = 0) → clear selection → "I still don’t understand": request problem = A, page context = A only, reply about the integral (10.6 s) → select B → Hint: request problem = B (8.1 s).
+
+### Handoff to Antigravity browser QA (build: http://127.0.0.1:5180/, backend 8010)
+Report handwriting recognition time (last pen-up → reading) separately from computation and canvas rendering; use explicit maths tasks; mark synthetic audio vs a real microphone/speaker.
+1. Handwritten derivative: write "dy/dx sin x²" → select → Full solution → expect a clarification card (sin(x²) / (sin x)² / dy/dx = sin(x²)) → pick each → d/dx sin(x²) = 2x cos(x²); d/dx (sin x)² = 2 sin x cos x; the equation stays an equation.
+2. Voice: Speak → talk with a pause → Done & Ask (sends once); Cancel during "Finishing…" (nothing sent, draft kept); slow transcription → after 15 s the box unlocks with words kept + Retry transcription.
+3. Move a dictated question (✥ Move) while a Full solution / Explain is pending → the answer lands next to the question's new position; Undo moves both back.
+4. Phone width (390 px): toolbar Write/Speak, selection menu wraps, clarification card fits.
+Known: advanced handwriting depends on BharatCode's vision call (measured 17.9 s for "sin(x+1)="); no real-microphone test has been done.

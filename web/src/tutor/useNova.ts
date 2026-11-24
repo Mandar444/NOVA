@@ -110,7 +110,7 @@ function isWorkingStep(page: Page, problemId: string, line: { bounds: Rect }, te
 }
 
 /** A follow-up to the previous teaching turn rather than a new question. */
-export const FOLLOW_UP = /(still (don'?t|do not|can'?t) (get|understand|see)|(don'?t|do not) (get|understand)|explain (it |that |this )?(again|differently|another way|more simply)|another way|differently|simpler|what do you mean|i'?m (lost|confused)|confused|why\??$|^why|one more time|go slower)/i
+export const FOLLOW_UP = /\b(still (don['’]?t|do not|can['’]?t) (get|understand|see)|(don['’]?t|do not) (get|understand)|explain (it |that |this )?(again|differently|another way|more simply)|another way|differently|simpler|what do you mean|i['’]?m (lost|confused)|confused|why\??$|^why\b|one more time|go slower)/i
 
 export function useNova(o: Options) {
   const [phases, setPhases] = useState<Record<string, { phase: ReadPhase; error?: string; since?: number }>>({})
@@ -491,12 +491,14 @@ export function useNova(o: Options) {
       const selText = sel ? readingText(p1.readings[sel]) : undefined
       let problemId: string | undefined
       let currentId: string | undefined
+      let followUp = false
       if (extra?.exam) {
         // a printed question: the student's latest working under it (if any) is the current step
         if (extra.workRegionId && p1.regions.some((r) => r.id === extra.workRegionId)) currentId = extra.workRegionId
       } else if (intent === 'ask' && !sel && FOLLOW_UP.test(question) && lastTeaching.current?.pageId === p1.id) {
         // "I still don't understand" / "why?": the same question as the last teaching turn, even if another line was written since
         const lt = lastTeaching.current
+        followUp = true
         problemId = lt.problemId && p1.regions.some((r) => r.id === lt.problemId) ? lt.problemId : undefined
         currentId = lt.currentId && p1.regions.some((r) => r.id === lt.currentId) ? lt.currentId : undefined
       } else if (intent === 'ask' && !sel) {
@@ -511,8 +513,8 @@ export function useNova(o: Options) {
         }
       } else if (intent === 'plot' || intent === 'solve') {
         currentId = sel ?? pickCurrent(p1, null)
-      } else if (sel && (sel === p1.problemRegionId || (selText && !isEquationInX(selText)))) {
-        problemId = sel // the problem itself, or a stand-alone line (arithmetic, graph equation)
+      } else if (sel && (sel === p1.problemRegionId || p1.regions.some((r) => r.id === sel && r.typedId) || (selText && !isEquationInX(selText)))) {
+        problemId = sel // the problem itself, a dictated question (always its own problem), or a stand-alone line
       } else {
         problemId = p1.problemRegionId ?? sel ?? undefined
         currentId = pickCurrent(p1, sel)
@@ -576,7 +578,8 @@ export function useNova(o: Options) {
         plotExpression: intent === 'plot' && cr ? readingText(cr)!.slice(0, 200) : null,
         exam: extra?.exam ?? null,
         regionIds: p.regions.map((r) => r.id).slice(0, 20),
-        pageLines: [...p.regions]
+        // an anchored follow-up is about its question only: other lines on the page must not pull it elsewhere
+        pageLines: [...p.regions].filter((r) => !followUp || (!problemId && !currentId) || r.id === problemId || r.id === currentId)
           .sort((a, b) => a.bounds.y - b.bounds.y || a.bounds.x - b.bounds.x)
           .map((r) => ({ regionId: r.id, text: (readingText(p.readings[r.id]) ?? '').slice(0, 160), accepted: p.readings[r.id]?.state === 'accepted' }))
           .filter((l) => l.text)
