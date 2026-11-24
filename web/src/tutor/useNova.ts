@@ -286,12 +286,14 @@ export function useNova(o: Options) {
   }, [])
 
   /** NOVA's own reaction to a line it just read: write the answer, or mark it ✓ / ✗ (exact maths, no model). */
-  const react = useCallback(async (regionId: string, sourceHash: string, force = false): Promise<boolean> => {
-    await waitFor(() => page()?.readings[regionId]?.sourceHash === sourceHash)
+  const react = useCallback(async (regionId: string, sourceHash: string, force = false, expectText?: string): Promise<boolean> => {
+    await waitFor(() => page()?.readings[regionId]?.sourceHash === sourceHash && (expectText === undefined || readingText(page()?.readings[regionId]) === expectText))
     const p = page()
     const region = p?.regions.find((r) => r.id === regionId)
     const text = readingText(p?.readings[regionId])
     if (!p || !region || region.sourceHash !== sourceHash || !text) return false
+    // the interpretation this calculation is for: same ink is not enough — an edited reading is a different question
+    const interp = p.readings[regionId]?.interpretationRevision ?? 0
     if (Object.values(opts.current.stateRef.current!.doc.tests ?? {}).some((t) => t.status !== 'finished' && t.pageIds.includes(p.id))) return false // it's a test
     let problemId = p.problemRegionId && p.problemRegionId !== regionId ? p.problemRegionId : undefined
     if (problemId && !force && !isQuestion(text) && !isWorkingStep(p, problemId, region, text)) {
@@ -300,6 +302,7 @@ export function useNova(o: Options) {
       problemId = undefined
     }
     const problemText = problemId ? p.readings[problemId]?.acceptedText : undefined
+    const problemInterp = problemId ? p.readings[problemId]?.interpretationRevision : undefined
     let res
     const key = `${regionId}:${sourceHash}`
     trace(key, 'auto-start')
@@ -323,8 +326,16 @@ export function useNova(o: Options) {
     const now = page()
     const cur = now?.regions.find((r) => r.id === regionId)
     if (!now || !cur || cur.sourceHash !== sourceHash || res.kind === 'none') return false
+    // stale if the student corrected the reading (or the problem it was checked against) while NOVA was calculating
+    const rNow = now.readings[regionId]
+    const pNow = problemId ? now.readings[problemId] : undefined
+    if (readingText(rNow) !== text || (rNow?.interpretationRevision ?? 0) !== interp || (problemId && (pNow?.acceptedText !== problemText || pNow?.interpretationRevision !== problemInterp))) {
+      trace(key, 'stale-drop', { reason: 'interpretation changed' })
+      return false
+    }
     // (the Solve button takes any answer, mark or worked solution NOVA can give)
-    const id = `auto:${regionId}:${sourceHash}`
+    // identity includes the interpretation: a corrected reading's answer replaces the earlier one (never sits beside it)
+    const id = `auto:${regionId}:${sourceHash}:i${interp}`
     // Worked solutions are shown only when asked for: the Solve button (force) or a request in Ask. Writing "x = ?",
     // "solve …" or an equation by itself gets NOVA's mark and the Solve/Ask buttons, never the solution unasked; the
     // value of an unknown ("x =" under a problem) is held back the same way. Plain arithmetic ("4 + 2 =") is still finished.
@@ -914,6 +925,17 @@ export function useNova(o: Options) {
     acceptLocal(p.id, regionId, lp.sourceHash, lr.result.literal, 'local-v3g + student', false)
   }, [])
 
+  /** The student confirmed or corrected a line's reading (no new ink): stop any read still running for it and calculate
+   *  once for the confirmed text. Results for the earlier text are discarded by react()'s interpretation guard. */
+  const reactAccepted = useCallback((regionId: string, text: string) => {
+    const p = page(), region = p?.regions.find((r) => r.id === regionId)
+    if (!p || !region) return
+    readCtl.current.get(regionId)?.abort(new DOMException('confirmed by the student', 'AbortError'))
+    setLocalPending((prev) => { if (!prev[regionId]) return prev; const n = { ...prev }; delete n[regionId]; return n })
+    void react(regionId, region.sourceHash, false, text.trim().slice(0, 160))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   /** The student confirmed NOVA's own (unsure) reading: accept it, stop the cloud read, let the exact engine answer. */
   const useLocal = useCallback((regionId: string) => {
     const lp = localRef.current[regionId]
@@ -926,7 +948,7 @@ export function useNova(o: Options) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  return { useLocal, phases, status, setStatus, ask, readNow, contentChanged, cancel, scheduler, solveHere, localPending, answerLocal, clarifies, dropClarify, resolveClarify }
+  return { useLocal, reactAccepted, phases, status, setStatus, ask, readNow, contentChanged, cancel, scheduler, solveHere, localPending, answerLocal, clarifies, dropClarify, resolveClarify }
 }
 
 export function intentLabel(intent: Intent): string {

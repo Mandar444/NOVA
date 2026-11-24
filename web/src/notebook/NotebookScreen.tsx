@@ -949,7 +949,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
                 selectedRegionId={selected}
                 hoveredRegionId={hovered}
                 showAccepted={settings.showReadback !== false}
-                onAccept={(id, text) => dispatch({ type: 'acceptReading', pageId, regionId: id, text })}
+                onAccept={(id, text) => { dispatch({ type: 'acceptReading', pageId, regionId: id, text }); nova.reactAccepted(id, text) }}
                 onRetry={(id) => void nova.readNow(id).catch((e) => toast((e as Error).message))}
                 onTypeIt={(id) => setTypeFor({ regionId: id, text: readingText(page.readings[id]) ?? nova.localPending[id]?.read.literal ?? '' })}
                 onLocalUse={(id) => nova.useLocal(id)}
@@ -978,7 +978,7 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
                   if (c) return void nova.resolveClarify(r.id, text)
                   // a typed correction is the confirmed reading: no OCR
                   if (r.typedId) dispatch({ type: 'editTyped', pageId, id: r.typedId, text, display: prettyMath(text), ...measureTyped(text) })
-                  else dispatch({ type: 'acceptReading', pageId, regionId: r.id, text })
+                  else { dispatch({ type: 'acceptReading', pageId, regionId: r.id, text }); if (!qc) nova.reactAccepted(r.id, text) }
                   if (nova.status.edit === r.id) nova.setStatus({ state: 'idle' })
                 }
                 const qc = questionOf(r.id)
