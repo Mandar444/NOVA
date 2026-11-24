@@ -951,7 +951,8 @@ export function NotebookScreen({ state, dispatch, settings, setSettings, saveSta
                 showAccepted={settings.showReadback !== false}
                 onAccept={(id, text) => dispatch({ type: 'acceptReading', pageId, regionId: id, text })}
                 onRetry={(id) => void nova.readNow(id).catch((e) => toast((e as Error).message))}
-                onTypeIt={(id) => setTypeFor({ regionId: id, text: readingText(page.readings[id]) ?? '' })}
+                onTypeIt={(id) => setTypeFor({ regionId: id, text: readingText(page.readings[id]) ?? nova.localPending[id]?.read.literal ?? '' })}
+                onLocalUse={(id) => nova.useLocal(id)}
                 localPending={nova.localPending}
                 onLocalAnswer={(id, q, o) => void nova.answerLocal(id, q, o)}
                 onStop={nova.cancel}

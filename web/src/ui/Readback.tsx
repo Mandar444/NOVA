@@ -31,6 +31,7 @@ interface Props {
   onAccept: (regionId: string, text: string) => void
   onRetry: (regionId: string) => void
   onTypeIt?: (regionId: string) => void // recognition failed or unsure: type the expression (no OCR)
+  onLocalUse?: (regionId: string) => void // the student confirms NOVA's own (unsure) reading: no cloud wait
   onSelect: (regionId: string) => void
   onQuick: (regionId: string, intent: 'plot' | 'solve' | 'ask' | 'hint' | 'explain' | 'complete') => void
   showAccepted?: boolean // the 'I read' chip on lines NOVA has read (Settings › Show what NOVA read)
@@ -52,7 +53,7 @@ function Waiting({ since, onStop, children }: { since?: number; onStop?: () => v
   )
 }
 
-export function ReadbackLayer({ page, view, phases, selectedRegionId, hoveredRegionId, onAccept, onRetry, onTypeIt, onSelect, onQuick, showAccepted = true, localPending = {}, onLocalAnswer, onStop }: Props) {
+export function ReadbackLayer({ page, view, phases, selectedRegionId, hoveredRegionId, onAccept, onRetry, onTypeIt, onLocalUse, onSelect, onQuick, showAccepted = true, localPending = {}, onLocalAnswer, onStop }: Props) {
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
   const [open, setOpen] = useState<string | null>(null) // the line whose help card is open
   // labels sit just under a line, where the next line gets written: only typing fields keep the pen;
@@ -73,7 +74,7 @@ export function ReadbackLayer({ page, view, phases, selectedRegionId, hoveredReg
         const selected = selectedRegionId === region.id
         const top = s.y + s.h + 4
         const reveal = selected || open === region.id || hoveredRegionId === region.id || editing?.id === region.id || (!canHover && latestRegion === region.id && !answered(region.id))
-        const needsYou = reading?.state === 'needs_clarification' || phase?.phase === 'failed'
+        const needsYou = reading?.state === 'needs_clarification' || phase?.phase === 'failed' || (!!localPending[region.id] && phase?.phase === 'recognizing')
         if (!reveal && !needsYou) return null // quiet page: details appear when you point at a line
         if (region.typedId && !selected && open !== region.id) return null // dictated maths shows itself; help appears when selected
         // dots/specks and big drawings with no maths get no label at all
@@ -107,7 +108,18 @@ export function ReadbackLayer({ page, view, phases, selectedRegionId, hoveredReg
               ))}
             </div>
           ) : null
-          if (phase?.phase === 'recognizing') return <Waiting since={phases[region.id]?.since} onStop={onStop}>{localQs}</Waiting>
+          // NOVA's own reading was complete but not sure enough to act on alone (e.g. one symbol at 0.80): show it at once,
+          // so the student can confirm it instead of waiting for the cloud; it is never acted on without that confirmation
+          const localGuess = lp && !localQs && lp.literal && ['answer', 'checked', 'expression', 'number'].includes(lp.status) ? (
+            <div className="rb-local" data-testid="local-suggestion">
+              <span className="muted">NOVA's own reading (not sure): <span className="mono">{lp.literal}</span></span>
+              <span className="rb-q">
+                <button className="chip strong" data-testid="local-use" onClick={() => onLocalUse?.(region.id)}>Use it</button>
+                {onTypeIt && <button className="link" data-testid="local-edit" onClick={() => onTypeIt(region.id)}>Edit</button>}
+              </span>
+            </div>
+          ) : null
+          if (phase?.phase === 'recognizing') return <Waiting since={phases[region.id]?.since} onStop={onStop}>{localQs ?? localGuess}</Waiting>
           if (phase?.phase === 'failed')
             return (
               <div className="readback failed">

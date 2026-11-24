@@ -243,6 +243,9 @@ export function useNova(o: Options) {
       const now = page()
       const cur = now?.regions.find((r) => r.id === regionId)
       if (!now || now.id !== ctx.pageId || !cur || cur.sourceHash !== ctx.sourceHash) { trace(key, 'stale-drop'); return } // stale: ink changed, it will be re-read
+      // the student already confirmed or corrected this line while the cloud was reading: that answer stands
+      const settled = now.readings[regionId]
+      if (settled?.state === 'accepted' && settled.sourceHash === ctx.sourceHash && (settled.interpretationRevision ?? 0) > ctx.interpretationRevision) { trace(key, 'stale-drop'); return }
       // two independent reads agreed: accept it (the student can still Edit); disagreement asks the student
       // cross-check with NOVA's own read: a small mark it saw clearly (decimal point, comma) that the cloud reading lacks
       // → don't act on it automatically; show the cloud reading for the student to confirm or edit (never rewritten here)
@@ -911,7 +914,19 @@ export function useNova(o: Options) {
     acceptLocal(p.id, regionId, lp.sourceHash, lr.result.literal, 'local-v3g + student', false)
   }, [])
 
-  return { phases, status, setStatus, ask, readNow, contentChanged, cancel, scheduler, solveHere, localPending, answerLocal, clarifies, dropClarify, resolveClarify }
+  /** The student confirmed NOVA's own (unsure) reading: accept it, stop the cloud read, let the exact engine answer. */
+  const useLocal = useCallback((regionId: string) => {
+    const lp = localRef.current[regionId]
+    const p = page(), region = p?.regions.find((r) => r.id === regionId)
+    if (!lp || !p || !region || region.sourceHash !== lp.sourceHash || !lp.read.literal) return
+    readCtl.current.get(regionId)?.abort(new DOMException('confirmed by the student', 'AbortError'))
+    setLocalPending((prev) => { const n = { ...prev }; delete n[regionId]; return n })
+    trace(`${regionId}:${region.sourceHash}`, 'local', { status: 'confirmed', reliable: true, gate: 'student confirmed', text: lp.read.literal })
+    acceptLocal(p.id, regionId, lp.sourceHash, lp.read.literal, 'local-v3g + student', true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  return { useLocal, phases, status, setStatus, ask, readNow, contentChanged, cancel, scheduler, solveHere, localPending, answerLocal, clarifies, dropClarify, resolveClarify }
 }
 
 export function intentLabel(intent: Intent): string {
