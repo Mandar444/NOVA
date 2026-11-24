@@ -260,3 +260,10 @@ Report handwriting recognition time (last pen-up → reading) separately from co
 3. Move a dictated question (✥ Move) while a Full solution / Explain is pending → the answer lands next to the question's new position; Undo moves both back.
 4. Phone width (390 px): toolbar Write/Speak, selection menu wraps, clarification card fits.
 Known: advanced handwriting depends on BharatCode's vision call (measured 17.9 s for "sin(x+1)="); no real-microphone test has been done.
+
+## _ASKED_TO_WRITE removed (2026-11-24, branch voice-dictation; local only)
+- Product decision: words such as "write", "add", "list", "notes", "formula" never bypass teaching safeguards. The malformed `_ASKED_TO_WRITE` pattern (two U+0008 instead of `\b`) and its exemption in `_is_students_step` are gone; only the teaching mode (hint / next / explain / solution) and an explicit full-solution request decide. Unrevealed tests stay hint-only.
+- "Write this question" (also copy/put … the/my question): the question itself is written on the page, nothing solved, no model call.
+- Reference material (e.g. "Write a trigonometry table") is written; any unrelated solution step in the same reply is still validated away.
+- Regressions (server/tests/test_write_requests.py, reply text AND canvas, with a deliberately over-sharing model reply): "Write a hint for this", "Help me add 3 to both sides", "Add notes explaining the rule", "Write this question", "Write a trigonometry table", "Write the full solution", and the same during an unrevealed test.
+- Checks: server 273, web 90, typecheck clean, no control characters left in server/app or web/src. Backend 8010 restarted; 5180 serves the current build. Antigravity's four QA cases (above) are unchanged.

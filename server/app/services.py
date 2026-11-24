@@ -341,12 +341,13 @@ def _build_prompt(req: TutorRequest, known: set[str], check: CheckResponse | Non
     return "\n".join(lines)
 
 
-_ASKED_TO_WRITE = re.compile(r"(write|add|put|make|table|notes?|formulas?|list)", re.IGNORECASE)
+_WRITE_QUESTION = re.compile(r"^\s*(please\s+)?(write|copy|put)\s+(down\s+)?(this|the|my)\s+question\b", re.IGNORECASE)
 
 
 def _is_students_step(req: TutorRequest, line: str, hide: bool) -> bool:
     """A line that is a correct transformed form of the problem (2x + 6 = 14 for 2(x + 3) = 14) is the student's next step."""
-    if not hide or not req.problem or wants_full_solution(req) or _ASKED_TO_WRITE.search(req.question or ""):
+    # "write", "add", "list", "formula"... never switch this off: only the teaching mode (hide) and an explicit full solution do
+    if not hide or not req.problem or wants_full_solution(req):
         return False
     try:
         return check_step(req.problem.text, line).status in ("equivalent", "solved") and _shape_eq(line) != _shape_eq(req.problem.text)
@@ -1085,6 +1086,13 @@ async def tutor(req: TutorRequest) -> TutorResponse:
             {"id": f"{rid}:0", "type": "write_equation", "anchorRegionId": anchor, "expression": proposal, "purpose": "completion", "verified": True}
         )
         return done(explanation, [act], check=check, verified="deterministic", model=model)
+
+    # ---- "Write this question": the question itself onto the page, nothing solved (no model call)
+    if req.problem and _WRITE_QUESTION.search(req.question or ""):
+        act = _action_adapter.validate_python({"id": f"{rid}:q", "type": "write_lines", "anchorRegionId": "page", "title": "Question",
+                                               "lines": [clean_math(req.problem.text, 80)], "inks": ["black"]})
+        act.verified = [True]
+        return done("Here is the question on your page. Try the first step yourself.", [act], verified="none")
 
     # ---- ask / hint / explain: model hint, validated actions
     if not req.problem and not req.current and not req.question.strip():
