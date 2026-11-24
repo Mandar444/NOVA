@@ -291,3 +291,9 @@ Timings (last pen-up →): local reader 2.1–2.3 s (unsure on calculus); cloud 
 - Tests: web 98 (5 bounded-budget scheduler tests with fake timers), server 273.
 - Browser (real build; INJECTED where noted): silent recognition while Explain joins the read → recovery card at 26.7 s, 0 tutor calls, ink kept; "Explain question 3" → Q3 id, hint, no answer; Q3 failure (injected 503) → Retry → Q3; Stop while waiting on a silent read → 0 tutor and 0 recognition calls afterwards, ink kept; page 2 of a two-page paper with repeated numbers → page-2 Q1 identity, own history, reply on page 2 (the earlier page-2 failure was the test script clicking the wrong element, not the app). Stop with BOTH slots occupied: unit-tested only.
 - REAL handwriting recognition: FAILED/BLOCKED today — "dy/dx sin x²" timed out at 30 s (BharatCode 27.97 s per call; another call 20.5 s). Typed-correction tests prove clarification/solving only.
+
+## DEPLOYED (2026-11-24) — https://nova-roan-eta.vercel.app
+- GitHub main fast-forwarded c065034 → 1a5e2ab (voice-dictation + merge of local main 9b8a7dd; its PDF/test-panel fixes were already present, its auto-send-on-pause voice change was superseded). Vercel served the new bundle 34 s after the push.
+- Live smoke (API, no handwriting): ∫₀² x² dx → [x³/3]₀² = 8/3 (1.2 s); "∫_0^1 x^2/100" and "dy/dx sin x^2" → clarification (0.34 s); browser reader model served; provider glm-5.3-flash.
+- Known on the live site: no server speech (faster-whisper not on Vercel) → voice needs the browser's recognizer, which Brave blocks; BharatCode handwriting reading timed out (27–28 s per call) in today's local tests; the browser handwriting model includes MathWriting data (non-commercial licence).
+- Rollback: push the previous main (c065034) back, or redeploy it from the Vercel dashboard.
